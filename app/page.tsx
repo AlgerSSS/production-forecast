@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
 import {
   autoImportFromDataDir,
   generateMonthlyTargets,
@@ -131,6 +131,17 @@ export default function Home() {
   };
   const [monthlyCoefficients, setMonthlyCoefficients] = useState<Record<string, number>>(DEFAULT_COEFFICIENTS);
   const [editingCoefficients, setEditingCoefficients] = useState(false);
+  const coefficientsLoadedRef = useRef(false);
+
+  // ========== 月度系数修改后自动保存到数据库（防抖 800ms） ==========
+  useEffect(() => {
+    // 跳过初始加载和从 DB 恢复时的触发
+    if (!coefficientsLoadedRef.current) return;
+    const timer = setTimeout(() => {
+      updateBusinessRule("monthlyCoefficients", monthlyCoefficients);
+    }, 800);
+    return () => clearTimeout(timer);
+  }, [monthlyCoefficients]);
 
   // ========== 页面加载时自动从数据库读取数据 ==========
   useEffect(() => {
@@ -156,6 +167,8 @@ export default function Home() {
         if (rules.monthlyCoefficients && Object.keys(rules.monthlyCoefficients).length > 0) {
           setMonthlyCoefficients(rules.monthlyCoefficients);
         }
+        // 标记加载完成，之后的系数变更才触发自动保存
+        setTimeout(() => { coefficientsLoadedRef.current = true; }, 0);
 
         setDataLoaded(true);
       } catch (err) {
@@ -1233,7 +1246,12 @@ export default function Home() {
             {/* Coefficient Editing Panel */}
             <div className="bg-white rounded-3xl shadow-[0_4px_40px_rgba(0,0,0,0.03)] p-8">
               <div className="flex items-center justify-between mb-4">
-                <h2 className="text-lg font-semibold text-[#1F2937]">月度系数配置</h2>
+                <div className="flex items-center gap-2">
+                  <h2 className="text-lg font-semibold text-[#1F2937]">月度系数配置</h2>
+                  {editingCoefficients && (
+                    <span className="text-xs text-[#9CA3AF]">修改后自动保存</span>
+                  )}
+                </div>
                 <button
                   onClick={() => setEditingCoefficients(!editingCoefficients)}
                   className="text-sm text-[#1F2937] bg-gray-50 hover:bg-gray-100 px-4 py-1.5 rounded-xl font-medium hover:scale-[1.03] active:scale-[0.97] transition-all duration-200"
