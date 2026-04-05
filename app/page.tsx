@@ -480,18 +480,143 @@ export default function Home() {
       }
     }
 
-    // Time slot sheet
+    // Time slot sheet — mirror the on-screen TimeSlotTable
     if (timeSlotSuggestions.length > 0) {
       const ws4 = wb.addWorksheet(`分时段_${selectedDate}`);
+      const ALL_SLOTS = ["10:00", "11:00", "12:00", "13:00", "14:00", "15:00", "16:00", "17:00", "18:00", "19:00"];
+      const slotHeaders = ALL_SLOTS.map((s) => s.replace(":00", "点"));
+
+      // Column widths
       ws4.columns = [
-        { header: "品名", key: "productName", width: 25 },
-        { header: "时段", key: "timeSlot", width: 10 },
-        { header: "数量", key: "quantity", width: 10 },
-        { header: "金额", key: "amount", width: 12 },
+        { width: 20 },  // 品名
+        { width: 8 },   // 总数
+        { width: 10 },  // 金额
+        ...ALL_SLOTS.map(() => ({ width: 8 })),
       ];
+
+      // Colors
+      const headerFill = { type: "pattern" as const, pattern: "solid" as const, fgColor: { argb: "FFF3F4F6" } };
+      const fixedSlotFill = { type: "pattern" as const, pattern: "solid" as const, fgColor: { argb: "FFF7E1E2" } };
+      const sumRowFill = { type: "pattern" as const, pattern: "solid" as const, fgColor: { argb: "FFFCE4E5" } };
+      const salesRowFill = { type: "pattern" as const, pattern: "solid" as const, fgColor: { argb: "FFEFF6FF" } };
+      const remainRowFill = { type: "pattern" as const, pattern: "solid" as const, fgColor: { argb: "FFF9FAFB" } };
+      const thinBorder = {
+        top: { style: "thin" as const, color: { argb: "FFE5E7EB" } },
+        bottom: { style: "thin" as const, color: { argb: "FFE5E7EB" } },
+        left: { style: "thin" as const, color: { argb: "FFE5E7EB" } },
+        right: { style: "thin" as const, color: { argb: "FFE5E7EB" } },
+      };
+
+      // Header row
+      const headerRow = ws4.addRow(["品名", "总数", "金额", ...slotHeaders]);
+      headerRow.eachCell((cell) => {
+        cell.fill = headerFill;
+        cell.font = { bold: true, size: 10, color: { argb: "FF9CA3AF" } };
+        cell.border = thinBorder;
+        cell.alignment = { horizontal: "center" };
+      });
+      headerRow.getCell(1).alignment = { horizontal: "left" };
+
+      // Build pivot data
+      const productNames = [...new Set(productSuggestions.map((p) => p.productName))];
+      const slotMap = new Map<string, Map<string, TimeSlotSuggestion>>();
       for (const s of timeSlotSuggestions) {
-        ws4.addRow(s);
+        if (!slotMap.has(s.productName)) slotMap.set(s.productName, new Map());
+        slotMap.get(s.productName)!.set(s.timeSlot, s);
       }
+
+      // Product rows
+      for (const name of productNames) {
+        const schedule = fixedSchedule[name] || [];
+        const productSlots = timeSlotSuggestions.filter((s) => s.productName === name);
+        const totalQty = productSlots.reduce((sum, s) => sum + s.quantity, 0);
+        const totalAmount = productSlots.reduce((sum, s) => sum + s.amount, 0);
+        const slotValues = ALL_SLOTS.map((slot) => {
+          const data = slotMap.get(name)?.get(slot);
+          return data && data.quantity > 0 ? data.quantity : "";
+        });
+        const row = ws4.addRow([name, totalQty, totalAmount, ...slotValues]);
+        row.eachCell((cell, colNumber) => {
+          cell.border = thinBorder;
+          cell.alignment = { horizontal: colNumber <= 1 ? "left" : "center" };
+          cell.font = { size: 10 };
+        });
+        // Highlight fixed shipment slots with deeper color
+        ALL_SLOTS.forEach((slot, idx) => {
+          if (schedule.includes(slot)) {
+            const cell = row.getCell(idx + 4); // offset: 品名+总数+金额 = 3
+            cell.fill = fixedSlotFill;
+            cell.font = { bold: true, size: 10 };
+          }
+        });
+      }
+
+      // 合计 row
+      const sumSlotValues = ALL_SLOTS.map((slot) =>
+        timeSlotSuggestions.filter((s) => s.timeSlot === slot).reduce((sum, s) => sum + s.amount, 0) || ""
+      );
+      const sumRow = ws4.addRow([
+        "合计",
+        timeSlotSuggestions.reduce((s, item) => s + item.quantity, 0),
+        timeSlotSuggestions.reduce((s, item) => s + item.amount, 0),
+        ...sumSlotValues,
+      ]);
+      sumRow.eachCell((cell) => {
+        cell.fill = sumRowFill;
+        cell.font = { bold: true, size: 10 };
+        cell.border = thinBorder;
+        cell.alignment = { horizontal: "center" };
+      });
+      sumRow.getCell(1).alignment = { horizontal: "left" };
+
+      // 预计销售 row
+      const priceMap = new Map<string, number>();
+      for (const p of productSuggestions) priceMap.set(p.productName, p.price);
+      let estimatedSalesTotal = 0;
+      const salesSlotValues = ALL_SLOTS.map((slot) => {
+        if (slot < "12:00") return "";
+        const amt = Math.round(
+          timeslotSalesRecords
+            .filter((r) => r.timeSlot === slot)
+            .reduce((sum, r) => sum + r.avgQuantity * (priceMap.get(r.productName) ?? 0), 0)
+        );
+        estimatedSalesTotal += amt;
+        return amt || "";
+      });
+      const salesRow = ws4.addRow(["预计销售", "", estimatedSalesTotal || "", ...salesSlotValues]);
+      salesRow.eachCell((cell) => {
+        cell.fill = salesRowFill;
+        cell.font = { size: 10, color: { argb: "FF1D4ED8" } };
+        cell.border = thinBorder;
+        cell.alignment = { horizontal: "center" };
+      });
+      salesRow.getCell(1).alignment = { horizontal: "left" };
+
+      // 预计剩余 row (cumulative)
+      const shipmentTotal = timeSlotSuggestions.reduce((s, item) => s + item.amount, 0);
+      let cumulativeShipment = 0;
+      let cumulativeSales = 0;
+      const remainSlotValues = ALL_SLOTS.map((slot, idx) => {
+        const slotShipment = timeSlotSuggestions.filter((s) => s.timeSlot === slot).reduce((sum, s) => sum + s.amount, 0);
+        cumulativeShipment += slotShipment;
+        const salesVal = typeof salesSlotValues[idx] === "number" ? salesSlotValues[idx] as number : 0;
+        cumulativeSales += salesVal;
+        if (cumulativeShipment === 0 && cumulativeSales === 0) return "";
+        return cumulativeShipment - cumulativeSales;
+      });
+      const remainRow = ws4.addRow(["预计剩余", "", shipmentTotal - estimatedSalesTotal, ...remainSlotValues]);
+      remainRow.eachCell((cell, colNumber) => {
+        cell.fill = remainRowFill;
+        cell.border = thinBorder;
+        cell.alignment = { horizontal: "center" };
+        const val = cell.value as number;
+        if (colNumber >= 3 && typeof val === "number") {
+          cell.font = { size: 10, color: { argb: val < 0 ? "FFEF4444" : "FF16A34A" } };
+        } else {
+          cell.font = { size: 10 };
+        }
+      });
+      remainRow.getCell(1).alignment = { horizontal: "left" };
     }
 
     const buf = await wb.xlsx.writeBuffer();
@@ -504,7 +629,7 @@ export default function Home() {
     a.download = `排产预估_${year}_${selectedMonth}.xlsx`;
     a.click();
     URL.revokeObjectURL(url);
-  }, [monthlyTargets, dailyTargets, productSuggestions, timeSlotSuggestions, year, selectedMonth, selectedDate]);
+  }, [monthlyTargets, dailyTargets, productSuggestions, timeSlotSuggestions, timeslotSalesRecords, fixedSchedule, year, selectedMonth, selectedDate]);
 
   // ========== AI Correction ==========
   const handleFetchAICorrection = useCallback(async () => {
