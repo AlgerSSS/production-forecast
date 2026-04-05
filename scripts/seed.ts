@@ -134,6 +134,34 @@ async function main() {
   }
   console.log(`  ✅ ${productInserts.length} products imported`);
 
+  // ========== 4b. Update display_full_quantity from 满柜数量 Excel ==========
+  console.log("📦 Importing display full quantity...");
+  const fullQtyFile = path.join(process.cwd(), "data", "kl陈列满柜单品数量.xlsx");
+  const wbFull = new ExcelJS.Workbook();
+  await wbFull.xlsx.readFile(fullQtyFile);
+  const sheetFull = wbFull.worksheets[0];
+
+  let fullQtyCount = 0;
+  const fullQtyUpdates: [string, number][] = [];
+  sheetFull.eachRow((row, rowNum) => {
+    if (rowNum <= 1) return;
+    const values = row.values as unknown[];
+    const rawName = String(values[7] || "").trim();
+    const qty = Number(values[9]) || 0;
+    if (!rawName || qty <= 0) return;
+
+    const standardName = resolveAlias(rawName, aliases);
+    if (!standardName) return;
+
+    fullQtyUpdates.push([standardName, qty]);
+  });
+
+  for (const [name, qty] of fullQtyUpdates) {
+    await sql`UPDATE product SET display_full_quantity = ${qty} WHERE name = ${name}`;
+    fullQtyCount++;
+  }
+  console.log(`  ✅ ${fullQtyCount} products updated with display_full_quantity`);
+
   // ========== 5. Seed Strategies from Excel ==========
   console.log("📊 Importing strategies from Excel...");
   const stratFile = path.join(process.cwd(), "data", "产品销售策略.xlsx");

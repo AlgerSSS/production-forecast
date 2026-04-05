@@ -412,141 +412,77 @@ export function calculateTimeSlotSuggestions(
       continue;
     }
 
-    // Split slots into pre-12:00 (full cabinet) and 12:00+ (proportional)
-    const earlySlots = targetSlots.filter((s) => s < "12:00");
-    const laterSlots = targetSlots.filter((s) => s >= "12:00");
-
-    // Pre-12:00 slots get displayFullQuantity each (aligned to packMultiple, capped by totalQty)
-    let earlyTotal = 0;
-    const earlyAllocations: { slot: string; qty: number }[] = [];
-    if (fullQty > 0 && earlySlots.length > 0) {
-      // Align fullQty to pack multiple for batch products
-      const alignedFullQty = multiple > 1
-        ? Math.ceil(fullQty / multiple) * multiple
-        : fullQty;
-      for (const slot of earlySlots) {
-        const maxAvail = totalQty - earlyTotal;
-        const qty = multiple > 1
-          ? Math.min(alignedFullQty, Math.floor(maxAvail / multiple) * multiple)
-          : Math.min(alignedFullQty, maxAvail);
-        if (qty > 0) {
-          earlyAllocations.push({ slot, qty });
-          earlyTotal += qty;
-        }
-      }
+    // Step a: Distribute totalQty across ALL targetSlots by historical proportion
+    const slotAvgs = new Map<string, number>();
+    let hasHistory = false;
+    for (const slot of targetSlots) {
+      const avg = productHistory?.get(slot) || 0;
+      slotAvgs.set(slot, avg);
+      if (avg > 0) hasHistory = true;
     }
 
-    const remainingQty = totalQty - earlyTotal;
-
-    // If no later slots or no remaining, put everything in early + done
-    if (laterSlots.length === 0 || remainingQty <= 0) {
-      for (const ea of earlyAllocations) {
-        slotSuggestions.push({
-          productName: product.productName,
-          timeSlot: ea.slot,
-          quantity: ea.qty,
-          amount: Math.round(ea.qty * product.price),
-        });
-      }
-      // If no early allocations were made (no fullQty), fall through to proportional
-      if (earlyAllocations.length > 0) {
-        // Distribute any leftover to early slots if no later slots
-        if (remainingQty > 0 && laterSlots.length === 0 && earlySlots.length > 0) {
-          earlyAllocations[earlyAllocations.length - 1].qty += remainingQty;
-        }
-        continue;
-      }
-    }
-
-    // Distribute remaining quantity across later slots by historical proportion
-    if (remainingQty > 0 && laterSlots.length > 0) {
-      // Add early allocations first
-      for (const ea of earlyAllocations) {
-        slotSuggestions.push({
-          productName: product.productName,
-          timeSlot: ea.slot,
-          quantity: ea.qty,
-          amount: Math.round(ea.qty * product.price),
-        });
-      }
-
-      if (productHistory && productHistory.size > 0) {
-        const laterAvgs = new Map<string, number>();
-        for (const slot of laterSlots) {
-          laterAvgs.set(slot, productHistory.get(slot) || 0);
-        }
-        const laterHistTotal = Array.from(laterAvgs.values()).reduce((s, v) => s + v, 0);
-
-        if (laterHistTotal > 0) {
-          const distributed = distributeByProportion(
-            remainingQty, laterAvgs, laterHistTotal, multiple, product.unitType
-          );
-          for (const [slot, qty] of distributed) {
-            if (qty > 0) {
-              slotSuggestions.push({
-                productName: product.productName,
-                timeSlot: slot,
-                quantity: qty,
-                amount: Math.round(qty * product.price),
-              });
-            }
-          }
-          continue;
-        }
-      }
-
-      // Fallback: equal distribution across later slots
-      const fallbackAvgs = new Map<string, number>();
-      for (const slot of laterSlots) fallbackAvgs.set(slot, 1);
-      const distributed = distributeByProportion(
-        remainingQty, fallbackAvgs, laterSlots.length, multiple, product.unitType
-      );
-      for (const [slot, qty] of distributed) {
-        if (qty > 0) {
-          slotSuggestions.push({
-            productName: product.productName,
-            timeSlot: slot,
-            quantity: qty,
-            amount: Math.round(qty * product.price),
-          });
-        }
-      }
-      continue;
-    }
-
-    // No fullQty and no early allocation — distribute all slots by proportion
-    if (productHistory && productHistory.size > 0) {
-      const slotAvgs = new Map<string, number>();
-      for (const slot of targetSlots) {
-        slotAvgs.set(slot, productHistory.get(slot) || 0);
-      }
+    let allocation: Map<string, number>;
+    if (hasHistory) {
       const histTotal = Array.from(slotAvgs.values()).reduce((s, v) => s + v, 0);
+      allocation = distributeByProportion(totalQty, slotAvgs, histTotal, multiple, product.unitType);
+    } else {
+      // No history: equal distribution
+      const equalAvgs = new Map<string, number>();
+      for (const slot of targetSlots) equalAvgs.set(slot, 1);
+      allocation = distributeByProportion(totalQty, equalAvgs, targetSlots.length, multiple, product.unitType);
+    }
 
-      if (histTotal > 0) {
-        const distributed = distributeByProportion(
-          totalQty, slotAvgs, histTotal, multiple, product.unitType
-        );
-        for (const [slot, qty] of distributed) {
-          if (qty > 0) {
-            slotSuggestions.push({
-              productName: product.productName,
-              timeSlot: slot,
-              quantity: qty,
-              amount: Math.round(qty * product.price),
-            });
+    // Step b: Full-cabinet constraint — earlySum (slots <= "12:00") must >= displayFullQuantity
+    const unit = (product.unitType === "batch" && multiple > 1) ? multiple : 1;
+    const earlySlots = targetSlots.filter((s) => s <= "12:00");
+    const lateSlots = targetSlots.filter((s) => s > "12:00");
+
+    if (fullQty > 0 && earlySlots.length > 0 && lateSlots.length > 0) {
+      const alignedFullQty = Math.ceil(fullQty / unit) * unit;
+      let earlySum = earlySlots.reduce((s, slot) => s + (allocation.get(slot) || 0), 0);
+
+      if (earlySum < alignedFullQty) {
+        let deficit = alignedFullQty - earlySum;
+        // Take from latest afternoon slots first
+        const reversedLate = [...lateSlots].reverse();
+        for (const lateSlot of reversedLate) {
+          if (deficit <= 0) break;
+          const lateQty = allocation.get(lateSlot) || 0;
+          const take = Math.min(deficit, Math.floor(lateQty / unit) * unit);
+          if (take > 0) {
+            allocation.set(lateSlot, lateQty - take);
+            deficit -= take;
           }
         }
-        continue;
+        // Add deficit-covered amount to the latest early slot
+        const lastEarly = earlySlots[earlySlots.length - 1];
+        const covered = alignedFullQty - earlySum - deficit;
+        if (covered > 0) {
+          allocation.set(lastEarly, (allocation.get(lastEarly) || 0) + covered);
+        }
+        earlySum += covered;
       }
     }
 
-    // Final fallback: equal distribution across all allowed slots
-    const fallbackAvgs = new Map<string, number>();
-    for (const slot of targetSlots) fallbackAvgs.set(slot, 1);
-    const fallbackDistributed = distributeByProportion(
-      totalQty, fallbackAvgs, targetSlots.length, multiple, product.unitType
-    );
-    for (const [slot, qty] of fallbackDistributed) {
+    // Step c: Fallback — if early slots exist but all have 0, move 1 unit from afternoon
+    if (earlySlots.length > 0 && lateSlots.length > 0) {
+      const earlySum = earlySlots.reduce((s, slot) => s + (allocation.get(slot) || 0), 0);
+      if (earlySum === 0) {
+        // Find last late slot with enough to give
+        for (let i = lateSlots.length - 1; i >= 0; i--) {
+          const lateQty = allocation.get(lateSlots[i]) || 0;
+          if (lateQty >= unit) {
+            allocation.set(lateSlots[i], lateQty - unit);
+            allocation.set(earlySlots[earlySlots.length - 1], unit);
+            break;
+          }
+        }
+      }
+    }
+
+    // Step d: Output all slots with qty > 0
+    for (const slot of targetSlots) {
+      const qty = allocation.get(slot) || 0;
       if (qty > 0) {
         slotSuggestions.push({
           productName: product.productName,
