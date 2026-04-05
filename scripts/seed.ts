@@ -249,6 +249,64 @@ async function main() {
   }
   console.log(`  ✅ ${salesInserts.length} sales records imported`);
 
+  // ========== 7. Calculate and Save Baselines ==========
+  console.log("📊 Calculating sales baselines...");
+
+  // Get product names from DB
+  const productRows = await sql`SELECT name FROM product`;
+  const productNameSet = new Set(productRows.map((r: { name: string }) => r.name));
+
+  // Get baseline overrides from business rules
+  const brOverrideRows = await sql`SELECT rule_value FROM business_rule WHERE rule_key = 'baselineOverrides'`;
+  const baselineOverrides: Record<string, { mondayToThursday: number; friday: number; weekend: number }> =
+    brOverrideRows.length > 0 ? JSON.parse(brOverrideRows[0].rule_value) : {};
+
+  // Aggregate daily sales by standardName and date
+  const dailyAgg: Record<string, Record<string, number>> = {};
+  for (const r of salesInserts) {
+    const name = r[1] as string; // standardName
+    if (!productNameSet.has(name)) continue;
+    if (!dailyAgg[name]) dailyAgg[name] = {};
+    if (!dailyAgg[name][r[3] as string]) dailyAgg[name][r[3] as string] = 0;
+    dailyAgg[name][r[3] as string] += r[2] as number;
+  }
+
+  // Classify by day type
+  const groupedSales: Record<string, { mondayToThursday: number[]; friday: number[]; weekend: number[] }> = {};
+  for (const [name, dateSales] of Object.entries(dailyAgg)) {
+    groupedSales[name] = { mondayToThursday: [], friday: [], weekend: [] };
+    for (const [dateStr, qty] of Object.entries(dateSales)) {
+      const dow = new Date(dateStr).getDay();
+      if (dow === 0 || dow === 6) groupedSales[name].weekend.push(qty);
+      else if (dow === 5) groupedSales[name].friday.push(qty);
+      else groupedSales[name].mondayToThursday.push(qty);
+    }
+  }
+
+  const avg = (arr: number[]) => arr.length > 0 ? Math.round(arr.reduce((a, b) => a + b, 0) / arr.length) : 0;
+
+  await sql`DELETE FROM product_sales_baseline`;
+  let baselineCount = 0;
+  for (const productName of productNameSet) {
+    const override = baselineOverrides[productName];
+    if (override) {
+      await sql`INSERT INTO product_sales_baseline (product_name, avg_monday_to_thursday, avg_friday, avg_weekend, total_sales, day_count)
+        VALUES (${productName}, ${override.mondayToThursday}, ${override.friday}, ${override.weekend}, 0, 0)`;
+      baselineCount++;
+      continue;
+    }
+    const data = groupedSales[productName];
+    const mtAvg = data ? avg(data.mondayToThursday) : 0;
+    const fAvg = data ? avg(data.friday) : 0;
+    const wAvg = data ? avg(data.weekend) : 0;
+    const totalSales = data ? data.mondayToThursday.reduce((a, b) => a + b, 0) + data.friday.reduce((a, b) => a + b, 0) + data.weekend.reduce((a, b) => a + b, 0) : 0;
+    const dayCount = data ? data.mondayToThursday.length + data.friday.length + data.weekend.length : 0;
+    await sql`INSERT INTO product_sales_baseline (product_name, avg_monday_to_thursday, avg_friday, avg_weekend, total_sales, day_count)
+      VALUES (${productName}, ${mtAvg}, ${fAvg}, ${wAvg}, ${totalSales}, ${dayCount})`;
+    baselineCount++;
+  }
+  console.log(`  ✅ ${baselineCount} baselines calculated and saved`);
+
   console.log("\n🎉 Database seed complete!");
   await sql.end();
 }
