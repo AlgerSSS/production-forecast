@@ -2091,21 +2091,25 @@ function TimeSlotTable({
                     );
                   })()}
                 </td>
-                {ALL_SLOTS.map((slot) => {
-                  const shipment = shipmentPerSlot.get(slot) || 0;
-                  const estimated = estimatedSalesPerSlot.get(slot) || 0;
-                  const diff = shipment - estimated;
-                  if (shipment === 0 && estimated === 0) {
-                    return <td key={slot} className="px-2 py-2 text-center"></td>;
-                  }
-                  return (
-                    <td key={slot} className="px-2 py-2 text-center">
-                      <span className={diff < 0 ? "text-red-500" : "text-green-600"}>
-                        {diff.toLocaleString()}
-                      </span>
-                    </td>
-                  );
-                })}
+                {(() => {
+                  let cumulativeShipment = 0;
+                  let cumulativeSales = 0;
+                  return ALL_SLOTS.map((slot) => {
+                    cumulativeShipment += shipmentPerSlot.get(slot) || 0;
+                    cumulativeSales += estimatedSalesPerSlot.get(slot) || 0;
+                    if (cumulativeShipment === 0 && cumulativeSales === 0) {
+                      return <td key={slot} className="px-2 py-2 text-center"></td>;
+                    }
+                    const diff = cumulativeShipment - cumulativeSales;
+                    return (
+                      <td key={slot} className="px-2 py-2 text-center">
+                        <span className={diff < 0 ? "text-red-500" : "text-green-600"}>
+                          {diff.toLocaleString()}
+                        </span>
+                      </td>
+                    );
+                  });
+                })()}
               </tr>
             </>
           );
