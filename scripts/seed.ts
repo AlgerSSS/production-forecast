@@ -307,6 +307,88 @@ async function main() {
   }
   console.log(`  ✅ ${baselineCount} baselines calculated and saved`);
 
+  // ========== 8. Import Timeslot Sales Data ==========
+  console.log("⏰ Importing timeslot sales data...");
+  const timeslotDir = path.join(process.cwd(), "data", "时段销售");
+  const fs = await import("fs");
+  if (fs.existsSync(timeslotDir)) {
+    const tsFiles = fs.readdirSync(timeslotDir).filter((f: string) => f.endsWith(".xlsx"));
+    if (tsFiles.length > 0) {
+      const tsWb = new ExcelJS.Workbook();
+      await tsWb.xlsx.readFile(path.join(timeslotDir, tsFiles[0]));
+      const tsSheet = tsWb.worksheets[0];
+
+      const SYSTEM_SLOTS = ["10:00", "11:00", "12:00", "13:00", "14:00", "15:00", "16:00", "17:00", "18:00", "19:00"];
+
+      // Accumulator: product -> dayType -> timeSlot -> { totalQty, days }
+      const tsAcc: Record<string, Record<string, Record<string, { totalQty: number; days: Set<string> }>>> = {};
+
+      tsSheet.eachRow((row, rowNum) => {
+        if (rowNum <= 1) return;
+        const values = row.values as unknown[];
+        const rawName = String(values[1] || "").trim();
+        const quantity = Number(values[2]) || 0;
+        const dateRaw = values[3];
+        const slotRaw = String(values[4] || "").trim();
+
+        if (!rawName || rawName === "总计" || !dateRaw || !slotRaw) return;
+        if (excludeKeywords.some((kw) => rawName.includes(kw))) return;
+
+        const standardName = resolveAlias(rawName, aliases);
+        if (!standardName || !productNameSet.has(standardName)) return;
+
+        let dateStr = "";
+        if (dateRaw instanceof Date) {
+          dateStr = dateRaw.toISOString().split("T")[0];
+        } else if (typeof dateRaw === "string") {
+          const d = new Date(dateRaw);
+          if (!isNaN(d.getTime())) dateStr = d.toISOString().split("T")[0];
+        }
+        if (!dateStr) return;
+
+        const dow = new Date(dateStr).getDay();
+        let dayType: string;
+        if (dow === 0 || dow === 6) dayType = "weekend";
+        else if (dow === 5) dayType = "friday";
+        else dayType = "mondayToThursday";
+
+        const slotMatch = slotRaw.match(/^(\d{1,2}):00/);
+        if (!slotMatch) return;
+        const hour = parseInt(slotMatch[1], 10);
+        const mappedSlot = `${String(hour).padStart(2, "0")}:00`;
+        if (!SYSTEM_SLOTS.includes(mappedSlot)) return;
+
+        if (!tsAcc[standardName]) tsAcc[standardName] = {};
+        if (!tsAcc[standardName][dayType]) tsAcc[standardName][dayType] = {};
+        if (!tsAcc[standardName][dayType][mappedSlot]) {
+          tsAcc[standardName][dayType][mappedSlot] = { totalQty: 0, days: new Set() };
+        }
+        tsAcc[standardName][dayType][mappedSlot].totalQty += quantity;
+        tsAcc[standardName][dayType][mappedSlot].days.add(dateStr);
+      });
+
+      await sql`DELETE FROM timeslot_sales_record`;
+      let tsCount = 0;
+      for (const [productName, dayTypes] of Object.entries(tsAcc)) {
+        for (const [dayType, slots] of Object.entries(dayTypes)) {
+          for (const [timeSlot, data] of Object.entries(slots)) {
+            const sampleCount = data.days.size;
+            const avgQuantity = sampleCount > 0 ? Math.round((data.totalQty / sampleCount) * 10) / 10 : 0;
+            await sql`INSERT INTO timeslot_sales_record (product_name, day_type, time_slot, avg_quantity, sample_count)
+              VALUES (${productName}, ${dayType}, ${timeSlot}, ${avgQuantity}, ${sampleCount})
+              ON CONFLICT (product_name, day_type, time_slot) DO UPDATE SET avg_quantity=EXCLUDED.avg_quantity, sample_count=EXCLUDED.sample_count`;
+            tsCount++;
+          }
+        }
+      }
+      console.log(`  ✅ ${tsCount} timeslot sales records imported`);
+    } else {
+      console.log("  ⚠️ 时段销售目录下无 xlsx 文件，跳过");
+    }
+  } else {
+    console.log("  ⚠️ 时段销售目录不存在，跳过");
+  }
+
   console.log("\n🎉 Database seed complete!");
   await sql.end();
 }
