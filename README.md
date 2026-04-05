@@ -198,9 +198,11 @@ production-forecast/
 │   ├── layout.tsx                  # 全局布局
 │   ├── globals.css                 # 全局样式（Tailwind）
 │   └── api/
-│       ├── ai-correction/route.ts  # AI 系数修正接口（Gemini）
-│       ├── forecast/               # 预测相关 API
-│       └── import/                 # 数据导入 API
+│       ├── ai-correction/route.ts          # AI 日系数修正接口
+│       ├── ai-product-correction/route.ts  # AI 单品出货修正接口
+│       ├── ai-timeslot/route.ts            # AI 分时段出货建议接口
+│       ├── forecast/                       # 预测相关 API
+│       └── import/                         # 数据导入 API
 ├── lib/
 │   ├── actions.ts                  # Server Actions（数据库 CRUD）
 │   ├── db.ts                       # MySQL 连接池
@@ -217,6 +219,7 @@ production-forecast/
 ├── data/                           # Excel 源数据文件
 ├── sql/
 │   ├── init.sql                    # 数据库初始化脚本
+│   ├── migrate-dev-plans.sql       # 开发计划迁移脚本
 │   └── seed-holidays-2026.sql      # 2026 年节假日数据
 └── package.json
 ```
