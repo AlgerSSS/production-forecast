@@ -22,6 +22,7 @@ import {
   getHolidays,
   addHoliday,
   deleteHoliday,
+  getTimeslotSalesRecords,
 } from "@/lib/actions";
 import type {
   MonthlyTarget,
@@ -36,6 +37,7 @@ import type {
   BusinessRules,
   Holiday,
   AIProductCorrection,
+  TimeslotSalesRecord,
 } from "@/lib/types";
 
 // ========== Tab Components ==========
@@ -106,6 +108,9 @@ export default function Home() {
   const [aiProductCorrectionLoading, setAiProductCorrectionLoading] = useState(false);
   const [aiProductCorrectionError, setAiProductCorrectionError] = useState("");
   const [aiProductCorrectionAdopted, setAiProductCorrectionAdopted] = useState(false);
+
+  // Timeslot sales records for estimated sales display
+  const [timeslotSalesRecords, setTimeslotSalesRecords] = useState<TimeslotSalesRecord[]>([]);
 
   // Rules management state
   const [showRulesPanel, setShowRulesPanel] = useState(false);
@@ -261,8 +266,12 @@ export default function Home() {
     setLoading(true);
     const dayTarget = dailyTargets.find((d) => d.date === selectedDate);
     if (dayTarget) {
-      const slots = await generateTimeSlotSuggestions(productSuggestions, dayTarget);
+      const [slots, records] = await Promise.all([
+        generateTimeSlotSuggestions(productSuggestions, dayTarget),
+        getTimeslotSalesRecords(dayTarget.dayType),
+      ]);
       setTimeSlotSuggestions(slots);
+      setTimeslotSalesRecords(records);
     }
     setLoading(false);
   }, [productSuggestions, dailyTargets, selectedDate]);
@@ -276,6 +285,8 @@ export default function Home() {
     setAiTimeSlotLoading(true);
     setAiTimeSlotError("");
     setAiTimeSlotAdopted(false);
+    // Fetch timeslot sales records for estimated sales display
+    getTimeslotSalesRecords(dayTarget.dayType).then(setTimeslotSalesRecords);
     try {
       const res = await fetch("/api/ai-timeslot", {
         method: "POST",
@@ -1824,6 +1835,7 @@ export default function Home() {
                     suggestions={timeSlotSuggestions}
                     productSuggestions={productSuggestions}
                     fixedSchedule={fixedSchedule}
+                    timeslotSalesRecords={timeslotSalesRecords}
                   />
                 </div>
               )}
@@ -1920,10 +1932,12 @@ function TimeSlotTable({
   suggestions,
   productSuggestions,
   fixedSchedule,
+  timeslotSalesRecords,
 }: {
   suggestions: TimeSlotSuggestion[];
   productSuggestions: ProductSuggestion[];
   fixedSchedule: Record<string, string[]>;
+  timeslotSalesRecords: TimeslotSalesRecord[];
 }) {
   const ALL_SLOTS = ["10:00", "11:00", "12:00", "13:00", "14:00", "15:00", "16:00", "17:00", "18:00", "19:00"];
 
@@ -2014,6 +2028,88 @@ function TimeSlotTable({
             );
           })}
         </tr>
+        {(() => {
+          // Build price lookup from productSuggestions
+          const priceMap = new Map<string, number>();
+          for (const p of productSuggestions) {
+            priceMap.set(p.productName, p.price);
+          }
+          // Calculate estimated sales amount per slot
+          const estimatedSalesPerSlot = new Map<string, number>();
+          let estimatedSalesTotal = 0;
+          for (const slot of ALL_SLOTS) {
+            if (slot < "12:00") {
+              estimatedSalesPerSlot.set(slot, 0);
+              continue;
+            }
+            const slotAmount = timeslotSalesRecords
+              .filter((r) => r.timeSlot === slot)
+              .reduce((sum, r) => {
+                const price = priceMap.get(r.productName) ?? 0;
+                return sum + r.avgQuantity * price;
+              }, 0);
+            estimatedSalesPerSlot.set(slot, Math.round(slotAmount));
+            estimatedSalesTotal += Math.round(slotAmount);
+          }
+          // Calculate shipment totals per slot (same as 合计 row)
+          const shipmentPerSlot = new Map<string, number>();
+          for (const slot of ALL_SLOTS) {
+            shipmentPerSlot.set(
+              slot,
+              suggestions.filter((s) => s.timeSlot === slot).reduce((sum, s) => sum + s.amount, 0)
+            );
+          }
+          const shipmentTotal = suggestions.reduce((s, item) => s + item.amount, 0);
+
+          return (
+            <>
+              <tr className="bg-blue-50/50 font-medium border-t border-gray-100">
+                <td className="px-2 py-2 sticky left-0 bg-blue-50/50 text-blue-700">预计销售</td>
+                <td className="px-2 py-2 text-right"></td>
+                <td className="px-2 py-2 text-right text-blue-700">
+                  {estimatedSalesTotal > 0 ? estimatedSalesTotal.toLocaleString() : ""}
+                </td>
+                {ALL_SLOTS.map((slot) => {
+                  const val = estimatedSalesPerSlot.get(slot) || 0;
+                  return (
+                    <td key={slot} className="px-2 py-2 text-center text-blue-700">
+                      {val > 0 ? val.toLocaleString() : ""}
+                    </td>
+                  );
+                })}
+              </tr>
+              <tr className="bg-gray-50/30 font-medium border-t border-gray-100">
+                <td className="px-2 py-2 sticky left-0 bg-gray-50/30">预计剩余</td>
+                <td className="px-2 py-2 text-right"></td>
+                <td className="px-2 py-2 text-right">
+                  {(() => {
+                    const diff = shipmentTotal - estimatedSalesTotal;
+                    return (
+                      <span className={diff < 0 ? "text-red-500" : "text-green-600"}>
+                        {diff.toLocaleString()}
+                      </span>
+                    );
+                  })()}
+                </td>
+                {ALL_SLOTS.map((slot) => {
+                  const shipment = shipmentPerSlot.get(slot) || 0;
+                  const estimated = estimatedSalesPerSlot.get(slot) || 0;
+                  const diff = shipment - estimated;
+                  if (shipment === 0 && estimated === 0) {
+                    return <td key={slot} className="px-2 py-2 text-center"></td>;
+                  }
+                  return (
+                    <td key={slot} className="px-2 py-2 text-center">
+                      <span className={diff < 0 ? "text-red-500" : "text-green-600"}>
+                        {diff.toLocaleString()}
+                      </span>
+                    </td>
+                  );
+                })}
+              </tr>
+            </>
+          );
+        })()}
       </tfoot>
     </table>
   );
