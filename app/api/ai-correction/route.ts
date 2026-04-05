@@ -1,9 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
 import { GoogleGenerativeAI } from "@google/generative-ai";
 import { query } from "@/lib/db";
-import type { RowDataPacket } from "mysql2/promise";
 
-interface HolidayRow extends RowDataPacket {
+interface HolidayRow {
   date: string;
   name: string;
   type: string;

@@ -32,10 +32,9 @@ import {
   TimeslotSalesRecord,
 } from "@/lib/types";
 import { query, execute } from "@/lib/db";
-import type { RowDataPacket } from "mysql2/promise";
 
 // ========== DB Row Types ==========
-interface ProductRow extends RowDataPacket {
+interface ProductRow {
   id: number;
   category: string;
   name: string;
@@ -46,7 +45,7 @@ interface ProductRow extends RowDataPacket {
   display_full_quantity: number;
 }
 
-interface StrategyRow extends RowDataPacket {
+interface StrategyRow {
   id: number;
   product_name: string;
   positioning: string;
@@ -59,7 +58,7 @@ interface StrategyRow extends RowDataPacket {
   sort_order: number;
 }
 
-interface BaselineRow extends RowDataPacket {
+interface BaselineRow {
   id: number;
   product_name: string;
   avg_monday_to_thursday: number;
@@ -69,25 +68,25 @@ interface BaselineRow extends RowDataPacket {
   day_count: number;
 }
 
-interface BusinessRuleRow extends RowDataPacket {
+interface BusinessRuleRow {
   id: number;
   rule_key: string;
   rule_value: string;
 }
 
-interface FixedScheduleRow extends RowDataPacket {
+interface FixedScheduleRow {
   id: number;
   product_name: string;
   time_slots: string;
 }
 
-interface AliasRow extends RowDataPacket {
+interface AliasRow {
   id: number;
   alias: string;
   standard_name: string;
 }
 
-interface HolidayRow extends RowDataPacket {
+interface HolidayRow {
   id: number;
   date: string;
   name: string;
@@ -202,7 +201,7 @@ export async function importProductPrices(formData: FormData): Promise<ImportRes
       await execute(
         `INSERT INTO product (category, name, name_en, price, pack_multiple, unit_type)
          VALUES (?, ?, ?, ?, ?, ?)
-         ON DUPLICATE KEY UPDATE category=VALUES(category), name_en=VALUES(name_en), price=VALUES(price), pack_multiple=VALUES(pack_multiple), unit_type=VALUES(unit_type)`,
+         ON CONFLICT (name) DO UPDATE SET category=EXCLUDED.category, name_en=EXCLUDED.name_en, price=EXCLUDED.price, pack_multiple=EXCLUDED.pack_multiple, unit_type=EXCLUDED.unit_type`,
         [p.category, p.name, p.nameEn, p.price, p.packMultiple, p.unitType]
       );
     }
@@ -271,8 +270,8 @@ export async function importStrategyData(formData: FormData): Promise<ImportResu
       await execute(
         `INSERT INTO product_strategy (product_name, positioning, category, cold_hot, sales_ratio, target_tc, audience, break_stock_time, sort_order)
          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-         ON DUPLICATE KEY UPDATE positioning=VALUES(positioning), category=VALUES(category), cold_hot=VALUES(cold_hot),
-         sales_ratio=VALUES(sales_ratio), target_tc=VALUES(target_tc), audience=VALUES(audience), break_stock_time=VALUES(break_stock_time), sort_order=VALUES(sort_order)`,
+         ON CONFLICT (product_name) DO UPDATE SET positioning=EXCLUDED.positioning, category=EXCLUDED.category, cold_hot=EXCLUDED.cold_hot,
+         sales_ratio=EXCLUDED.sales_ratio, target_tc=EXCLUDED.target_tc, audience=EXCLUDED.audience, break_stock_time=EXCLUDED.break_stock_time, sort_order=EXCLUDED.sort_order`,
         [s.productName, s.positioning, s.category, s.coldHot, s.salesRatio, s.targetTC, s.audience, s.breakStockTime, sortOrder]
       );
     }
@@ -303,7 +302,7 @@ export async function autoImportFromDataDir(): Promise<{
       await execute(
         `INSERT INTO product (category, name, name_en, price, pack_multiple, unit_type)
          VALUES (?, ?, ?, ?, ?, ?)
-         ON DUPLICATE KEY UPDATE category=VALUES(category), name_en=VALUES(name_en), price=VALUES(price), pack_multiple=VALUES(pack_multiple), unit_type=VALUES(unit_type)`,
+         ON CONFLICT (name) DO UPDATE SET category=EXCLUDED.category, name_en=EXCLUDED.name_en, price=EXCLUDED.price, pack_multiple=EXCLUDED.pack_multiple, unit_type=EXCLUDED.unit_type`,
         [p.category, p.name, p.nameEn, p.price, p.packMultiple, p.unitType]
       );
     }
@@ -343,8 +342,8 @@ export async function autoImportFromDataDir(): Promise<{
       await execute(
         `INSERT INTO product_strategy (product_name, positioning, category, cold_hot, sales_ratio, target_tc, audience, break_stock_time, sort_order)
          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-         ON DUPLICATE KEY UPDATE positioning=VALUES(positioning), category=VALUES(category), cold_hot=VALUES(cold_hot),
-         sales_ratio=VALUES(sales_ratio), target_tc=VALUES(target_tc), audience=VALUES(audience), break_stock_time=VALUES(break_stock_time), sort_order=VALUES(sort_order)`,
+         ON CONFLICT (product_name) DO UPDATE SET positioning=EXCLUDED.positioning, category=EXCLUDED.category, cold_hot=EXCLUDED.cold_hot,
+         sales_ratio=EXCLUDED.sales_ratio, target_tc=EXCLUDED.target_tc, audience=EXCLUDED.audience, break_stock_time=EXCLUDED.break_stock_time, sort_order=EXCLUDED.sort_order`,
         [s.productName, s.positioning, s.category, s.coldHot, s.salesRatio, s.targetTC, s.audience, s.breakStockTime, sortOrder]
       );
     }
@@ -406,7 +405,7 @@ export async function autoImportFromDataDir(): Promise<{
           await execute(
             `INSERT INTO timeslot_sales_record (product_name, day_type, time_slot, avg_quantity, sample_count)
              VALUES (?, ?, ?, ?, ?)
-             ON DUPLICATE KEY UPDATE avg_quantity=VALUES(avg_quantity), sample_count=VALUES(sample_count)`,
+             ON CONFLICT (product_name, day_type, time_slot) DO UPDATE SET avg_quantity=EXCLUDED.avg_quantity, sample_count=EXCLUDED.sample_count`,
             [r.productName, r.dayType, r.timeSlot, r.avgQuantity, r.sampleCount]
           );
         }
@@ -547,7 +546,7 @@ export async function getBusinessRulesFromDB(): Promise<BusinessRules> {
 export async function updateBusinessRule(key: string, value: unknown): Promise<void> {
   await execute(
     `INSERT INTO business_rule (rule_key, rule_value) VALUES (?, ?)
-     ON DUPLICATE KEY UPDATE rule_value = VALUES(rule_value)`,
+     ON CONFLICT (rule_key) DO UPDATE SET rule_value = EXCLUDED.rule_value`,
     [key, JSON.stringify(value)]
   );
 }
@@ -564,7 +563,7 @@ export async function getFixedShipmentSchedules(): Promise<Record<string, string
 export async function updateFixedShipmentSchedule(productName: string, timeSlots: string[]): Promise<void> {
   await execute(
     `INSERT INTO fixed_shipment_schedule (product_name, time_slots) VALUES (?, ?)
-     ON DUPLICATE KEY UPDATE time_slots = VALUES(time_slots)`,
+     ON CONFLICT (product_name) DO UPDATE SET time_slots = EXCLUDED.time_slots`,
     [productName, JSON.stringify(timeSlots)]
   );
 }
@@ -585,7 +584,7 @@ export async function getProductAliases(): Promise<Record<string, string>> {
 export async function updateProductAlias(alias: string, standardName: string): Promise<void> {
   await execute(
     `INSERT INTO product_alias (alias, standard_name) VALUES (?, ?)
-     ON DUPLICATE KEY UPDATE standard_name = VALUES(standard_name)`,
+     ON CONFLICT (alias) DO UPDATE SET standard_name = EXCLUDED.standard_name`,
     [alias, standardName]
   );
 }
@@ -623,7 +622,7 @@ export async function getHolidays(year?: number, month?: number): Promise<Holida
 export async function addHoliday(holiday: Omit<Holiday, "id">): Promise<void> {
   await execute(
     `INSERT INTO holiday (date, name, type, coefficient, note) VALUES (?, ?, ?, ?, ?)
-     ON DUPLICATE KEY UPDATE name=VALUES(name), type=VALUES(type), coefficient=VALUES(coefficient), note=VALUES(note)`,
+     ON CONFLICT (date) DO UPDATE SET name=EXCLUDED.name, type=EXCLUDED.type, coefficient=EXCLUDED.coefficient, note=EXCLUDED.note`,
     [holiday.date, holiday.name, holiday.type, holiday.coefficient ?? null, holiday.note]
   );
 }
@@ -654,7 +653,7 @@ export async function batchAddHolidays(holidays: Omit<Holiday, "id">[]): Promise
 }
 
 // ========== Timeslot Sales Data Actions ==========
-interface TimeslotSalesRow extends RowDataPacket {
+interface TimeslotSalesRow {
   id: number;
   product_name: string;
   day_type: string;
@@ -701,6 +700,6 @@ export async function importTimeslotSalesData(
 }
 
 export async function hasTimeslotSalesData(): Promise<boolean> {
-  const rows = await query<RowDataPacket>("SELECT COUNT(*) as cnt FROM timeslot_sales_record");
+  const rows = await query<{ cnt: number }>("SELECT COUNT(*) as cnt FROM timeslot_sales_record");
   return (rows[0] as { cnt: number }).cnt > 0;
 }

@@ -1,10 +1,16 @@
 import "dotenv/config";
-import mysql from "mysql2/promise";
+import postgresLib from "postgres";
 import { readFileSync } from "fs";
 import path from "path";
 import ExcelJS from "exceljs";
 
-const DATABASE_URL = process.env.DATABASE_URL || "mysql://root:20010709@localhost:3306/production_forecast";
+const DATABASE_URL = process.env.DATABASE_URL || "";
+if (!DATABASE_URL) {
+  console.error("❌ DATABASE_URL is required");
+  process.exit(1);
+}
+
+const sql = postgresLib(DATABASE_URL);
 
 function resolveAlias(name: string, aliases: Record<string, string>): string {
   if (!name) return "";
@@ -15,7 +21,6 @@ function resolveAlias(name: string, aliases: Record<string, string>): string {
 }
 
 async function main() {
-  const pool = mysql.createPool(DATABASE_URL);
   console.log("🌱 Starting database seed...\n");
 
   // ========== 1. Seed Business Rules ==========
@@ -35,11 +40,9 @@ async function main() {
   ];
 
   for (const [key, value] of businessRules) {
-    await pool.execute(
-      `INSERT INTO business_rule (rule_key, rule_value) VALUES (?, ?)
-       ON DUPLICATE KEY UPDATE rule_value = VALUES(rule_value)`,
-      [key, value]
-    );
+    await sql`
+      INSERT INTO business_rule (rule_key, rule_value) VALUES (${key}, ${value})
+      ON CONFLICT (rule_key) DO UPDATE SET rule_value = EXCLUDED.rule_value`;
   }
   console.log(`  ✅ ${businessRules.length} business rules saved`);
 
@@ -51,11 +54,10 @@ async function main() {
   const planningKeys = ["timeSlots", "restockLeadTime", "reductionLeadTime", "topPriorityRestock", "breakStockThresholds"];
   for (const key of planningKeys) {
     if (pr[key] !== undefined) {
-      await pool.execute(
-        `INSERT INTO business_rule (rule_key, rule_value) VALUES (?, ?)
-         ON DUPLICATE KEY UPDATE rule_value = VALUES(rule_value)`,
-        [key, JSON.stringify(pr[key])]
-      );
+      const val = JSON.stringify(pr[key]);
+      await sql`
+        INSERT INTO business_rule (rule_key, rule_value) VALUES (${key}, ${val})
+        ON CONFLICT (rule_key) DO UPDATE SET rule_value = EXCLUDED.rule_value`;
     }
   }
   console.log(`  ✅ ${planningKeys.length} planning rules saved`);
@@ -64,11 +66,10 @@ async function main() {
   const schedule: Record<string, string[]> = pr.fixedShipmentSchedule || {};
   const schedEntries = Object.entries(schedule);
   for (const [productName, timeSlots] of schedEntries) {
-    await pool.execute(
-      `INSERT INTO fixed_shipment_schedule (product_name, time_slots) VALUES (?, ?)
-       ON DUPLICATE KEY UPDATE time_slots = VALUES(time_slots)`,
-      [productName, JSON.stringify(timeSlots)]
-    );
+    const ts = JSON.stringify(timeSlots);
+    await sql`
+      INSERT INTO fixed_shipment_schedule (product_name, time_slots) VALUES (${productName}, ${ts})
+      ON CONFLICT (product_name) DO UPDATE SET time_slots = EXCLUDED.time_slots`;
   }
   console.log(`  ✅ ${schedEntries.length} fixed shipment schedules saved`);
 
@@ -80,11 +81,9 @@ async function main() {
 
   const aliasEntries = Object.entries(aliases);
   for (const [alias, standardName] of aliasEntries) {
-    await pool.execute(
-      `INSERT INTO product_alias (alias, standard_name) VALUES (?, ?)
-       ON DUPLICATE KEY UPDATE standard_name = VALUES(standard_name)`,
-      [alias, standardName]
-    );
+    await sql`
+      INSERT INTO product_alias (alias, standard_name) VALUES (${alias}, ${standardName})
+      ON CONFLICT (alias) DO UPDATE SET standard_name = EXCLUDED.standard_name`;
   }
   console.log(`  ✅ ${aliasEntries.length} product aliases saved`);
 
@@ -95,7 +94,7 @@ async function main() {
   await wb1.xlsx.readFile(prodFile);
   const sheet1 = wb1.worksheets[0];
 
-  await pool.execute("DELETE FROM product");
+  await sql`DELETE FROM product`;
 
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const productInserts: any[][] = [];
@@ -126,11 +125,12 @@ async function main() {
   });
 
   for (const p of productInserts) {
-    await pool.execute(
-      `INSERT INTO product (category, name, name_en, price, pack_multiple, unit_type) VALUES (?, ?, ?, ?, ?, ?)
-       ON DUPLICATE KEY UPDATE category=VALUES(category), name_en=VALUES(name_en), price=VALUES(price), pack_multiple=VALUES(pack_multiple), unit_type=VALUES(unit_type)`,
-      p
-    );
+    await sql`
+      INSERT INTO product (category, name, name_en, price, pack_multiple, unit_type)
+      VALUES (${p[0]}, ${p[1]}, ${p[2]}, ${p[3]}, ${p[4]}, ${p[5]})
+      ON CONFLICT (name) DO UPDATE SET
+        category=EXCLUDED.category, name_en=EXCLUDED.name_en, price=EXCLUDED.price,
+        pack_multiple=EXCLUDED.pack_multiple, unit_type=EXCLUDED.unit_type`;
   }
   console.log(`  ✅ ${productInserts.length} products imported`);
 
@@ -141,7 +141,7 @@ async function main() {
   await wb2.xlsx.readFile(stratFile);
   const sheet2 = wb2.worksheets[0];
 
-  await pool.execute("DELETE FROM product_strategy");
+  await sql`DELETE FROM product_strategy`;
 
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const stratInserts: any[][] = [];
@@ -185,13 +185,13 @@ async function main() {
   });
 
   for (const s of stratInserts) {
-    await pool.execute(
-      `INSERT INTO product_strategy (product_name, positioning, category, cold_hot, sales_ratio, target_tc, audience, break_stock_time)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-       ON DUPLICATE KEY UPDATE positioning=VALUES(positioning), category=VALUES(category), cold_hot=VALUES(cold_hot),
-       sales_ratio=VALUES(sales_ratio), target_tc=VALUES(target_tc), audience=VALUES(audience), break_stock_time=VALUES(break_stock_time)`,
-      s
-    );
+    await sql`
+      INSERT INTO product_strategy (product_name, positioning, category, cold_hot, sales_ratio, target_tc, audience, break_stock_time)
+      VALUES (${s[0]}, ${s[1]}, ${s[2]}, ${s[3]}, ${s[4]}, ${s[5]}, ${s[6]}, ${s[7]})
+      ON CONFLICT (product_name) DO UPDATE SET
+        positioning=EXCLUDED.positioning, category=EXCLUDED.category, cold_hot=EXCLUDED.cold_hot,
+        sales_ratio=EXCLUDED.sales_ratio, target_tc=EXCLUDED.target_tc, audience=EXCLUDED.audience,
+        break_stock_time=EXCLUDED.break_stock_time`;
   }
   console.log(`  ✅ ${stratInserts.length} strategies imported`);
 
@@ -202,7 +202,7 @@ async function main() {
   await wb3.xlsx.readFile(salesFile);
   const sheet3 = wb3.worksheets[0];
 
-  await pool.execute("DELETE FROM daily_sales_record");
+  await sql`DELETE FROM daily_sales_record`;
 
   const excludeKeywords = [
     "拿铁", "咖啡", "柠檬茶", "酸奶昔", "提拉米苏", "抹茶拿铁",
@@ -242,17 +242,15 @@ async function main() {
   const BATCH_SIZE = 500;
   for (let i = 0; i < salesInserts.length; i += BATCH_SIZE) {
     const batch = salesInserts.slice(i, i + BATCH_SIZE);
-    const placeholders = batch.map(() => "(?, ?, ?, ?, ?)").join(",");
-    const flat = batch.flat();
-    await pool.execute(
-      `INSERT INTO daily_sales_record (product_name, standard_name, quantity, date, day_of_week) VALUES ${placeholders}`,
-      flat
+    const values = batch.map(r => `('${r[0].replace(/'/g, "''")}', '${r[1].replace(/'/g, "''")}', ${r[2]}, '${r[3]}', ${r[4]})`).join(",");
+    await sql.unsafe(
+      `INSERT INTO daily_sales_record (product_name, standard_name, quantity, date, day_of_week) VALUES ${values}`
     );
   }
   console.log(`  ✅ ${salesInserts.length} sales records imported`);
 
   console.log("\n🎉 Database seed complete!");
-  await pool.end();
+  await sql.end();
 }
 
 main().catch((e) => {

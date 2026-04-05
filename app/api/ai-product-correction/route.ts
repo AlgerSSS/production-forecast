@@ -1,16 +1,15 @@
 import { NextRequest, NextResponse } from "next/server";
 import { GoogleGenerativeAI } from "@google/generative-ai";
 import { query } from "@/lib/db";
-import type { RowDataPacket } from "mysql2/promise";
 
-interface BaselineRow extends RowDataPacket {
+interface BaselineRow {
   product_name: string;
   avg_monday_to_thursday: number;
   avg_friday: number;
   avg_weekend: number;
 }
 
-interface TimeslotRow extends RowDataPacket {
+interface TimeslotRow {
   product_name: string;
   time_slot: string;
   avg_quantity: number;

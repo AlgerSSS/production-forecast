@@ -1,11 +1,5 @@
 -- 2026年马来西亚公共假期 (吉隆坡/联邦直辖区)
 -- 系数由 AI 根据节日类型、节前节后影响动态判断，不在此固定
--- 使用: mysql -u root -p20010709 production_forecast < sql/seed-holidays-2026.sql
-
-USE production_forecast;
-
--- 先将 coefficient 列改为可空（兼容旧表）
-ALTER TABLE holiday MODIFY COLUMN coefficient DOUBLE DEFAULT NULL COMMENT '该天建议系数（由AI动态判断，可留空）';
 
 INSERT INTO holiday (date, name, type, note) VALUES
   ('2026-01-01', '元旦新年', 'public_holiday', '新年公共假期'),
@@ -26,8 +20,8 @@ INSERT INTO holiday (date, name, type, note) VALUES
   ('2026-11-08', '屠妖节', 'public_holiday', '印度教排灯节'),
   ('2026-12-11', '州元首华诞', 'public_holiday', '州元首生日'),
   ('2026-12-25', '圣诞节', 'public_holiday', '圣诞节公共假期')
-ON DUPLICATE KEY UPDATE
-  name = VALUES(name),
-  type = VALUES(type),
+ON CONFLICT (date) DO UPDATE SET
+  name = EXCLUDED.name,
+  type = EXCLUDED.type,
   coefficient = NULL,
-  note = VALUES(note);
+  note = EXCLUDED.note;
