@@ -1,36 +1,281 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# Production Forecast — 烘焙店排产预估系统
 
-## Getting Started
+基于 Next.js + MySQL + AI 的烘焙店每日排产预估系统，适用于马来西亚吉隆坡地区的烘焙连锁门店。系统通过历史销售数据、业务规则和 AI 智能修正，自动生成月度营业额目标 → 日营业额分配 → 单品出货建议 → 分时段排产计划的完整预测链路。
 
-First, run the development server:
+## 技术栈
 
-```bash
-npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
+| 层级 | 技术 |
+|------|------|
+| 前端 | Next.js 16 + React 19 + Tailwind CSS 4 |
+| 后端 | Next.js Server Actions + API Routes |
+| 数据库 | MySQL 8 (mysql2) |
+| AI 引擎 | Google Gemini 2.5 Flash |
+| 数据解析 | ExcelJS（Excel 导入导出） |
+| 语言 | TypeScript 5 |
+
+## 系统架构
+
+```
+┌─────────────────────────────────────────────────────────────┐
+│                        前端 (app/page.tsx)                    │
+│  数据导入 → 月目标 → 日目标 → 单品建议 → 分时段 → 导出       │
+└────────────────────────┬────────────────────────────────────┘
+                         │
+         ┌───────────────┼───────────────┐
+         ▼               ▼               ▼
+  Server Actions    API Routes     AI Correction
+  (lib/actions.ts)  (app/api/)    (Gemini 2.5 Flash)
+         │               │               │
+         ▼               ▼               ▼
+  ┌──────────────────────────────────────────┐
+  │          MySQL (production_forecast)      │
+  │  product │ product_strategy │ holiday     │
+  │  daily_sales_record │ product_alias       │
+  │  product_sales_baseline │ business_rule   │
+  │  fixed_shipment_schedule                  │
+  └──────────────────────────────────────────┘
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+## 核心功能模块
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+### 1. 数据导入（数据导入 Tab）
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+从 `data/` 目录下的 Excel 文件批量导入：
 
-## Learn More
+| 文件 | 用途 |
+|------|------|
+| `产品价格信息与倍数.xlsx` | 产品基本信息：品类、品名、单价、包装倍数、出货单位 |
+| `产品销售策略.xlsx` | 产品定位（TOP/潜在TOP/其他）、冷热属性、销售占比、目标TC、断货时间 |
+| `单品销售数量1.1-4.2.xlsx` | 历史每日单品销量数据 |
 
-To learn more about Next.js, take a look at the following resources:
+导入时自动完成：
+- 产品名称别名映射（通过 `config/product-aliases.json`）
+- 按日期类型（周一至周四 / 周五 / 周末）计算销售基线
+- 非烘焙类产品自动过滤（咖啡、饮品、周边等）
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+### 2. 月度营业额目标（月目标 Tab）
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
+基于业务规则计算全年12个月的营业额目标：
 
-## Deploy on Vercel
+```
+月营业额 = 首月基础营业额 × 月度系数 × (1 + 运营提升 + 市场提升)
+```
 
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
+- 月度系数可在 UI 中手动调整
+- 支持 AI 修正：调用 Gemini 模型根据节假日分析自动建议每日系数
 
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+### 3. 日营业额分配（日目标 Tab）
+
+将月度目标按权重分配到每一天：
+
+| 日期类型 | 默认权重 |
+|----------|----------|
+| 周一至周四 | 1.0 |
+| 周五 | 1.2 |
+| 周末 | 1.35 |
+
+**AI 智能修正**：系统将数据库中的节假日信息（日期、名称、类型）传递给 Gemini AI，由 AI 综合分析以下因素后自主判断每日系数：
+
+- **节假日当天影响**：根据节日类型和重要程度（如农历新年 > 一般公假）
+- **节前效应**：重大节日前1-3天消费提前上升
+- **节后效应**：长假结束后的消费回落
+- **长周末 / 桥假效应**：公假与周末连休的叠加影响
+- **发薪日效应**：月初月中消费略高
+- **相邻月份节假日**：跨月的节前节后影响分析
+
+### 4. 单品出货建议（单品建议 Tab）
+
+根据销售基线和产品策略生成每日单品出货量：
+
+- 基线数据按日期类型（周一至四 / 周五 / 周末）分别计算平均销量
+- TOP 产品加权 +10%，潜在TOP 加权 +5%
+- 按包装倍数取整（整批产品向上取整，按个产品四舍五入）
+- 按目标营业额等比缩放，确保总出货金额匹配日目标
+- 支持手动调整单品数量
+
+### 5. 分时段排产（分时段 Tab）
+
+根据固定出货时间表，将单品日总量分配到各时段：
+
+- 时间段可配置（默认 10:00 ~ 19:00）
+- 每个产品可设置独立的出货时间表
+- 余量优先分配给较早的时段（早高峰销量更好）
+
+### 6. 数据导出（导出 Tab）
+
+将排产结果导出为 Excel 文件，供门店直接使用。
+
+## 数据库表结构
+
+| 表名 | 用途 |
+|------|------|
+| `product` | 产品信息（品名、价格、倍数、冷热类型） |
+| `product_strategy` | 产品销售策略（定位、占比、目标TC） |
+| `daily_sales_record` | 历史每日单品销量记录 |
+| `product_sales_baseline` | 按日期类型计算的销售基线缓存 |
+| `product_alias` | 产品名称别名映射 |
+| `business_rule` | 业务规则 (Key-Value JSON 存储) |
+| `holiday` | 节假日/特殊日期信息（AI 动态判断系数） |
+| `fixed_shipment_schedule` | 固定出货时间表 |
+
+### 节假日管理
+
+`holiday` 表仅存储节日的基本信息（日期、名称、类型、备注），**不固定系数**。系数由 AI 在每次预测时根据节日类型、节前节后影响等因素动态判断。已录入 2026 年马来西亚全部法定公假（共18个节日）。
+
+## 快速开始
+
+### 环境要求
+
+- Node.js 18+
+- MySQL 8.0+
+- Google Gemini API Key
+
+### 安装与配置
+
+```bash
+# 1. 安装依赖
+npm install
+
+# 2. 配置环境变量
+cp .env.example .env
+# 编辑 .env，填写数据库连接和 Gemini API Key
+```
+
+`.env` 配置示例：
+
+```env
+# 数据库连接（二选一）
+DATABASE_URL="mysql://root:password@localhost:3306/production_forecast"
+# 或分别配置：
+# DB_HOST=localhost
+# DB_PORT=3306
+# DB_USER=root
+# DB_PASSWORD=password
+# DB_NAME=production_forecast
+
+# AI 引擎
+GEMINI_API_KEY=your-gemini-api-key-here
+```
+
+### 初始化数据库
+
+```bash
+# 创建数据库和表
+mysql -u root -p < sql/init.sql
+
+# 导入 2026 年马来西亚公共假期
+mysql -u root -p < sql/seed-holidays-2026.sql
+```
+
+### 启动
+
+```bash
+# 开发模式
+npm run dev
+
+# 生产构建
+npm run build
+npm start
+```
+
+打开 [http://localhost:3000](http://localhost:3000) 访问系统。
+
+### 使用流程
+
+1. **数据导入** — 点击「一键导入」从 `data/` 目录加载 Excel 数据
+2. **月目标** — 查看/调整月度系数，生成全年营业额目标
+3. **日目标** — 选择月份，点击「AI 修正」让 AI 分析节假日影响并调整每日系数
+4. **单品建议** — 选择日期，查看每个产品的建议出货量
+5. **分时段** — 查看按时间段分配的排产计划
+6. **导出** — 导出 Excel 排产表供门店使用
+
+## 项目结构
+
+```
+production-forecast/
+├── app/
+│   ├── page.tsx                    # 主页面（所有 Tab UI）
+│   ├── layout.tsx                  # 全局布局
+│   ├── globals.css                 # 全局样式（Tailwind）
+│   └── api/
+│       ├── ai-correction/route.ts  # AI 系数修正接口（Gemini）
+│       ├── forecast/               # 预测相关 API
+│       └── import/                 # 数据导入 API
+├── lib/
+│   ├── actions.ts                  # Server Actions（数据库 CRUD）
+│   ├── db.ts                       # MySQL 连接池
+│   ├── engine/
+│   │   └── forecast-engine.ts      # 核心预测引擎
+│   ├── parsers/
+│   │   └── excel-parser.ts         # Excel 文件解析器
+│   └── types/
+│       └── index.ts                # TypeScript 类型定义
+├── config/
+│   ├── business-rules.json         # 业务规则配置
+│   ├── planning-rules.json         # 排产规则配置
+│   └── product-aliases.json        # 产品名称别名映射
+├── data/                           # Excel 源数据文件
+├── sql/
+│   ├── init.sql                    # 数据库初始化脚本
+│   └── seed-holidays-2026.sql      # 2026 年节假日数据
+└── package.json
+```
+
+## 业务规则配置
+
+通过 UI 的「规则管理」面板可配置以下内容：
+
+| 规则 | 说明 |
+|------|------|
+| 首月基础营业额 | 全年计算的基准值（默认 RM 1,640,000） |
+| 运营提升率 | 月度运营增长（默认 2%） |
+| 市场提升率 | 市场推广增长（默认 4%） |
+| 日期权重 | 周一至四 / 周五 / 周末的权重系数 |
+| 出货公式 | 试吃损耗率 6%、水吧占比 11%、出货率 95% |
+| 产品别名 | 原始数据品名 → 标准品名的映射 |
+| 出货时间表 | 各产品的固定出货时段 |
+| 节假日管理 | 录入节日信息，AI 自动判断系数影响 |
+
+---
+
+## 开发计划（即将实施）
+
+以下功能计划在近期迭代中实现：
+
+### 计划一：TOP 品排序优化
+
+**目标**：系统中 TOP 品的展示顺序需严格按照 `data/产品销售策略.xlsx` 表格中的排列顺序。
+
+**现状**：当前产品顺序按数据库 `product` 表 ID 排序。
+
+**方案**：
+- 从 `product_strategy` 表读取产品顺序，以策略表中的排列位置作为排序依据
+- 在单品建议和分时段排产中，TOP 品优先展示，顺序与策略表一致
+
+### 计划二：单品建议按日期类型分类计算
+
+**目标**：对日目标的单品建议进行更精细的数据分类和推断。
+
+**现状**：当前已按日期类型（周一至四 / 周五 / 周末）分别计算销售基线，但单品建议的计算逻辑可以进一步优化。
+
+**方案**：
+- **第一类（周一至周四）**：使用周一至周四的历史销售数据进行推断
+- **第二类（周五）**：使用周五的历史销售数据进行推断
+- **第三类（周六周日）**：使用周末的历史销售数据进行推断
+- 不同产品在不同日期类型的受欢迎程度不同，分类计算可提升预测精度
+- 例如：某些产品周末销量远高于工作日，而另一些产品反之
+
+### 计划三：AI 驱动的分时段出货建议
+
+**目标**：基于不同日期类型的分时段单品销售数据，利用 AI 智能制定时段出货建议。
+
+**现状**：分时段排产目前基于固定出货时间表均匀分配，未考虑不同时段的实际销售规律。
+
+**方案**：
+- 需要三类分时段销售数据表：
+  - **第一类**：周一至周四的各时段单品销量
+  - **第二类**：周五的各时段单品销量
+  - **第三类**：周六日的各时段单品销量
+- 将分时段数据导入系统后，调用 AI（Gemini）分析不同时段的销售规律
+- AI 根据历史时段数据、产品冷热属性、消费高峰时段等因素，智能生成更合理的时段出货分配方案
+- 替代当前的"均匀分配"逻辑，实现基于数据的精准排产
