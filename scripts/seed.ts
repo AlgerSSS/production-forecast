@@ -254,12 +254,14 @@ async function main() {
 
   // Get product names from DB
   const productRows = await sql`SELECT name FROM product`;
-  const productNameSet = new Set(productRows.map((r: { name: string }) => r.name));
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const productNameSet = new Set(productRows.map((r: any) => r.name as string));
 
   // Get baseline overrides from business rules
   const brOverrideRows = await sql`SELECT rule_value FROM business_rule WHERE rule_key = 'baselineOverrides'`;
   const baselineOverrides: Record<string, { mondayToThursday: number; friday: number; weekend: number }> =
-    brOverrideRows.length > 0 ? JSON.parse(brOverrideRows[0].rule_value) : {};
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    brOverrideRows.length > 0 ? JSON.parse((brOverrideRows[0] as any).rule_value) : {};
 
   // Aggregate daily sales by standardName and date
   const dailyAgg: Record<string, Record<string, number>> = {};
