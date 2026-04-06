@@ -617,6 +617,165 @@ export default function Home() {
         }
       });
       remainRow.getCell(1).alignment = { horizontal: "left" };
+
+      // ========== 试吃报废表格 ==========
+      const currentDayTarget = dailyTargets.find((d) => d.date === selectedDate);
+      const shipmentAmount = currentDayTarget?.shipmentAmount ?? 0;
+
+      const tastingProducts = [
+        { name: "蛋挞", keyword: "蛋挞", rate: 0.015 },
+        { name: "马卡龙", keyword: "马卡龙", rate: 0.015 },
+        { name: "坚果棒", keyword: "坚果棒", rate: 0.01 },
+      ];
+      const wasteRate = 0.02;
+      const tastingFill = { type: "pattern" as const, pattern: "solid" as const, fgColor: { argb: "FFFFFBEB" } };
+
+      // Step 1: Compute each tasting product's sales per slot (≥12:00)
+      const activeSlots = ALL_SLOTS.filter((s) => s >= "12:00");
+      const productSlotSales: Record<string, Record<string, number>> = {};
+      for (const tp of tastingProducts) {
+        productSlotSales[tp.name] = {};
+        for (const slot of activeSlots) {
+          const sales = timeslotSalesRecords
+            .filter((r) => r.timeSlot === slot && r.productName.includes(tp.keyword))
+            .reduce((sum, r) => sum + r.avgQuantity * (priceMap.get(r.productName) ?? 0), 0);
+          productSlotSales[tp.name][slot] = sales;
+        }
+      }
+
+      // Step 2: For each active slot, find the best tasting product
+      const slotAssignment: Record<string, string> = {}; // slot -> product name
+      for (const slot of activeSlots) {
+        let bestProduct = "";
+        let bestSales = 0;
+        for (const tp of tastingProducts) {
+          const sales = productSlotSales[tp.name][slot];
+          if (sales > bestSales) {
+            bestSales = sales;
+            bestProduct = tp.name;
+          }
+        }
+        if (bestProduct) slotAssignment[slot] = bestProduct;
+      }
+
+      // Step 3: Group slots by assigned product, compute proportional allocation
+      // salesSlotValues is indexed by ALL_SLOTS, values are number or ""
+      const getSalesForSlot = (slot: string): number => {
+        const idx = ALL_SLOTS.indexOf(slot);
+        const v = salesSlotValues[idx];
+        return typeof v === "number" ? v : 0;
+      };
+
+      const productAssignedSlots: Record<string, string[]> = {};
+      for (const tp of tastingProducts) productAssignedSlots[tp.name] = [];
+      for (const [slot, pName] of Object.entries(slotAssignment)) {
+        productAssignedSlots[pName].push(slot);
+      }
+
+      // Handle unassigned products: merge their budget into the product with most slots
+      const assignedProducts = tastingProducts.filter((tp) => productAssignedSlots[tp.name].length > 0);
+      const unassignedProducts = tastingProducts.filter((tp) => productAssignedSlots[tp.name].length === 0);
+      if (unassignedProducts.length > 0 && assignedProducts.length > 0) {
+        // Find the product with the most assigned slots
+        const target = assignedProducts.reduce((a, b) =>
+          productAssignedSlots[a.name].length >= productAssignedSlots[b.name].length ? a : b
+        );
+        for (const up of unassignedProducts) {
+          // Merge rate into target
+          target.rate += up.rate;
+          up.rate = 0;
+        }
+      }
+
+      // Compute per-slot tasting amounts
+      const tastingSlotAmounts: Record<string, Record<string, number>> = {};
+      for (const tp of tastingProducts) {
+        tastingSlotAmounts[tp.name] = {};
+        const totalBudget = Math.round(shipmentAmount * tp.rate);
+        const slots = productAssignedSlots[tp.name];
+        const slotSalesSum = slots.reduce((sum, s) => sum + getSalesForSlot(s), 0);
+        for (const slot of slots) {
+          const slotSales = getSalesForSlot(slot);
+          tastingSlotAmounts[tp.name][slot] = slotSalesSum > 0
+            ? Math.round(totalBudget * slotSales / slotSalesSum)
+            : Math.round(totalBudget / slots.length);
+        }
+      }
+
+      // Empty separator row
+      ws4.addRow([]);
+
+      // "试吃分配" header row (col1=品名, col2=空(总数), col3=总金额, col4-13=时段)
+      const tastingHeaderRow = ws4.addRow(["试吃分配", "", "", ...slotHeaders]);
+      tastingHeaderRow.eachCell((cell) => {
+        cell.fill = tastingFill;
+        cell.font = { bold: true, size: 10 };
+        cell.border = thinBorder;
+        cell.alignment = { horizontal: "center" };
+      });
+      tastingHeaderRow.getCell(1).alignment = { horizontal: "left" };
+
+      // Product tasting rows
+      for (const tp of tastingProducts) {
+        const totalBudget = Math.round(shipmentAmount * tp.rate);
+        const slotValues = ALL_SLOTS.map((slot) => {
+          const amt = tastingSlotAmounts[tp.name][slot];
+          return amt && amt > 0 ? amt : "";
+        });
+        const row = ws4.addRow([tp.name, "", totalBudget, ...slotValues]);
+        row.eachCell((cell, colNumber) => {
+          cell.fill = tastingFill;
+          cell.font = { size: 10 };
+          cell.border = thinBorder;
+          cell.alignment = { horizontal: colNumber <= 1 ? "left" : "center" };
+        });
+      }
+
+      // 试吃小计 row
+      const tastingSubtotal = Math.round(shipmentAmount * 0.04);
+      const subtotalSlotValues = ALL_SLOTS.map((slot) => {
+        const total = tastingProducts.reduce((sum, tp) => {
+          const amt = tastingSlotAmounts[tp.name][slot];
+          return sum + (amt && amt > 0 ? amt : 0);
+        }, 0);
+        return total > 0 ? total : "";
+      });
+      const subtotalRow = ws4.addRow(["试吃小计", "", tastingSubtotal, ...subtotalSlotValues]);
+      subtotalRow.eachCell((cell, colNumber) => {
+        cell.fill = tastingFill;
+        cell.font = { bold: true, size: 10 };
+        cell.border = thinBorder;
+        cell.alignment = { horizontal: colNumber <= 1 ? "left" : "center" };
+      });
+
+      // 该时段预计销售 row
+      const tastingSalesRow = ws4.addRow(["该时段预计销售", "", estimatedSalesTotal || "", ...salesSlotValues]);
+      tastingSalesRow.eachCell((cell, colNumber) => {
+        cell.fill = tastingFill;
+        cell.font = { size: 10, color: { argb: "FF1D4ED8" } };
+        cell.border = thinBorder;
+        cell.alignment = { horizontal: colNumber <= 1 ? "left" : "center" };
+      });
+
+      // 排产报废 row
+      const wasteAmount = Math.round(shipmentAmount * wasteRate);
+      const wasteRow = ws4.addRow(["排产报废", "", wasteAmount]);
+      wasteRow.eachCell((cell, colNumber) => {
+        cell.fill = tastingFill;
+        cell.font = { size: 10 };
+        cell.border = thinBorder;
+        cell.alignment = { horizontal: colNumber <= 1 ? "left" : "center" };
+      });
+
+      // 损耗合计 row
+      const totalLoss = Math.round(shipmentAmount * 0.06);
+      const lossRow = ws4.addRow(["损耗合计", "", totalLoss]);
+      lossRow.eachCell((cell, colNumber) => {
+        cell.fill = tastingFill;
+        cell.font = { bold: true, size: 10 };
+        cell.border = thinBorder;
+        cell.alignment = { horizontal: colNumber <= 1 ? "left" : "center" };
+      });
     }
 
     const buf = await wb.xlsx.writeBuffer();
