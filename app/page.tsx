@@ -672,18 +672,11 @@ export default function Home() {
         productAssignedSlots[pName].push(slot);
       }
 
-      // Handle unassigned products: merge their budget into the product with most slots
-      const assignedProducts = tastingProducts.filter((tp) => productAssignedSlots[tp.name].length > 0);
-      const unassignedProducts = tastingProducts.filter((tp) => productAssignedSlots[tp.name].length === 0);
-      if (unassignedProducts.length > 0 && assignedProducts.length > 0) {
-        // Find the product with the most assigned slots
-        const target = assignedProducts.reduce((a, b) =>
-          productAssignedSlots[a.name].length >= productAssignedSlots[b.name].length ? a : b
-        );
-        for (const up of unassignedProducts) {
-          // Merge rate into target
-          target.rate += up.rate;
-          up.rate = 0;
+      // Handle unassigned products: distribute their budget evenly across all active slots with sales
+      for (const tp of tastingProducts) {
+        if (productAssignedSlots[tp.name].length === 0) {
+          const slotsWithSales = activeSlots.filter((s) => getSalesForSlot(s) > 0);
+          productAssignedSlots[tp.name] = slotsWithSales.length > 0 ? slotsWithSales : activeSlots;
         }
       }
 
