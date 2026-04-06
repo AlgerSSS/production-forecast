@@ -2086,18 +2086,18 @@ export default function Home() {
                 </h2>
                 <div className="flex gap-2">
                   <button
-                    onClick={handleGenerateTimeSlots}
-                    disabled={loading || productSuggestions.length === 0}
-                    className="bg-gray-50 text-[#1F2937] px-4 py-2.5 rounded-xl hover:bg-gray-100 hover:scale-[1.03] active:scale-[0.97] disabled:opacity-50 text-sm font-medium transition-all duration-200"
-                  >
-                    规则生成
-                  </button>
-                  <button
                     onClick={handleFetchAITimeSlot}
                     disabled={aiTimeSlotLoading || productSuggestions.length === 0}
                     className="bg-[#F7E1E2] text-[#1F2937] px-6 py-2.5 rounded-xl hover:bg-[#EBCDCF] hover:scale-[1.03] active:scale-[0.97] disabled:opacity-50 text-sm font-medium transition-all duration-200"
                   >
                     {aiTimeSlotLoading ? "AI 分析中..." : "AI 智能分配"}
+                  </button>
+                  <button
+                    onClick={handleGenerateTimeSlots}
+                    disabled={loading || productSuggestions.length === 0}
+                    className="bg-gray-50 text-[#1F2937] px-4 py-2.5 rounded-xl hover:bg-gray-100 hover:scale-[1.03] active:scale-[0.97] disabled:opacity-50 text-sm font-medium transition-all duration-200"
+                  >
+                    规则生成
                   </button>
                 </div>
               </div>
