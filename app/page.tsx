@@ -708,9 +708,17 @@ export default function Home() {
       });
       tastingHeaderRow.getCell(1).alignment = { horizontal: "left" };
 
-      // Product tasting rows
+      // Find unit price for each tasting product via fuzzy match
+      const tastingPriceMap: Record<string, number> = {};
+      for (const tp of tastingProducts) {
+        const match = productSuggestions.find((p) => p.productName.includes(tp.keyword));
+        tastingPriceMap[tp.name] = match?.price ?? 0;
+      }
+
+      // Product tasting rows (amount + quantity)
       for (const tp of tastingProducts) {
         const totalBudget = Math.round(shipmentAmount * tp.rate);
+        const unitPrice = tastingPriceMap[tp.name];
         const slotValues = ALL_SLOTS.map((slot) => {
           const amt = tastingSlotAmounts[tp.name][slot];
           return amt && amt > 0 ? amt : "";
@@ -719,6 +727,21 @@ export default function Home() {
         row.eachCell((cell, colNumber) => {
           cell.fill = tastingFill;
           cell.font = { size: 10 };
+          cell.border = thinBorder;
+          cell.alignment = { horizontal: colNumber <= 1 ? "left" : "center" };
+        });
+
+        // Quantity row
+        const totalQty = unitPrice > 0 ? Math.ceil(totalBudget / unitPrice) : 0;
+        const qtySlotValues = ALL_SLOTS.map((slot) => {
+          const amt = tastingSlotAmounts[tp.name][slot];
+          if (!amt || amt <= 0 || unitPrice <= 0) return "";
+          return Math.ceil(amt / unitPrice);
+        });
+        const qtyRow = ws4.addRow([`${tp.name}(个数)`, "", totalQty || "", ...qtySlotValues]);
+        qtyRow.eachCell((cell, colNumber) => {
+          cell.fill = tastingFill;
+          cell.font = { size: 10, color: { argb: "FF6B7280" } };
           cell.border = thinBorder;
           cell.alignment = { horizontal: colNumber <= 1 ? "left" : "center" };
         });
