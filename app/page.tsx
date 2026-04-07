@@ -480,18 +480,31 @@ export default function Home() {
       }
     }
 
-    // Time slot sheet — mirror the on-screen TimeSlotTable
+    // Time slot sheet — full production estimate format
     if (timeSlotSuggestions.length > 0) {
       const ws4 = wb.addWorksheet(`分时段_${selectedDate}`);
       const ALL_SLOTS = ["10:00", "11:00", "12:00", "13:00", "14:00", "15:00", "16:00", "17:00", "18:00", "19:00"];
       const slotHeaders = ALL_SLOTS.map((s) => s.replace(":00", "点"));
 
-      // Column widths
+      // Columns: 品名 | 定位 | 冷/热 | 单价 | 倍数 | 满柜 | 总数 | 金额 | 10点~19点(数量) | 10点~19点(金额) | 试吃量 | 试吃金额 | 加货数量 | 加货备注 | 减货数量 | 减货备注
+      const COL_OFFSET_QTY = 9; // slot quantity columns start at col 9
       ws4.columns = [
-        { width: 20 },  // 品名
-        { width: 8 },   // 总数
-        { width: 10 },  // 金额
-        ...ALL_SLOTS.map(() => ({ width: 8 })),
+        { width: 22 },  // A: 品名
+        { width: 8 },   // B: 定位
+        { width: 6 },   // C: 冷/热
+        { width: 8 },   // D: 单价
+        { width: 6 },   // E: 倍数
+        { width: 6 },   // F: 满柜
+        { width: 8 },   // G: 总数
+        { width: 10 },  // H: 金额
+        ...ALL_SLOTS.map(() => ({ width: 7 })),  // I-R: 10点~19点 数量
+        ...ALL_SLOTS.map(() => ({ width: 8 })),  // S-AB: 10点~19点 金额
+        { width: 8 },   // AC: 试吃量
+        { width: 8 },   // AD: 试吃金额
+        { width: 8 },   // AE: 加货数量
+        { width: 12 },  // AF: 加货备注
+        { width: 8 },   // AG: 减货数量
+        { width: 12 },  // AH: 减货备注
       ];
 
       // Colors
@@ -506,12 +519,60 @@ export default function Home() {
         left: { style: "thin" as const, color: { argb: "FFE5E7EB" } },
         right: { style: "thin" as const, color: { argb: "FFE5E7EB" } },
       };
+      const titleFill = { type: "pattern" as const, pattern: "solid" as const, fgColor: { argb: "FFDBEAFE" } };
 
-      // Header row
-      const headerRow = ws4.addRow(["品名", "总数", "金额", ...slotHeaders]);
+      // ---- Header info rows ----
+      const currentDayTarget = dailyTargets.find((d) => d.date === selectedDate);
+      const shipmentAmount = currentDayTarget?.shipmentAmount ?? 0;
+      const dayRevenue = currentDayTarget?.revenue ?? 0;
+      const dayOfWeek = currentDayTarget ? `周${DOW_LABELS[currentDayTarget.dayOfWeek]}` : "";
+      const dayTypeLabel = currentDayTarget ? DAY_TYPE_LABELS[currentDayTarget.dayType] : "";
+      const tastingWasteAmount = Math.round(shipmentAmount * 0.06);
+
+      // Row 1: Title
+      const titleRow = ws4.addRow(["生产预估单"]);
+      ws4.mergeCells(1, 1, 1, 8);
+      titleRow.getCell(1).font = { bold: true, size: 14 };
+      titleRow.getCell(1).fill = titleFill;
+      titleRow.getCell(1).alignment = { horizontal: "center" };
+
+      // Row 2: Date & basic info
+      const infoRow = ws4.addRow([
+        `日期：${selectedDate}`, "", `${dayOfWeek}（${dayTypeLabel}）`, "",
+        "业绩预估", dayRevenue, "出货金额", shipmentAmount,
+      ]);
+      infoRow.eachCell((cell) => {
+        cell.font = { size: 10 };
+        cell.border = thinBorder;
+      });
+      infoRow.getCell(5).font = { bold: true, size: 10 };
+      infoRow.getCell(6).font = { bold: true, size: 10, color: { argb: "FFDC2626" } };
+      infoRow.getCell(7).font = { bold: true, size: 10 };
+      infoRow.getCell(8).font = { bold: true, size: 10, color: { argb: "FFDC2626" } };
+
+      // Row 3: Tasting/waste info
+      const infoRow2 = ws4.addRow([
+        "", "", "", "",
+        "试吃+排产", tastingWasteAmount, "试吃占比", "6%",
+      ]);
+      infoRow2.eachCell((cell) => {
+        cell.font = { size: 10 };
+        cell.border = thinBorder;
+      });
+
+      // Row 4: Empty separator
+      ws4.addRow([]);
+
+      // ---- Column header row ----
+      const headerRow = ws4.addRow([
+        "品名", "定位", "冷/热", "单价", "倍数", "满柜", "总数", "金额",
+        ...slotHeaders.map((s) => `${s}出货`),
+        ...slotHeaders.map((s) => `${s}金额`),
+        "试吃量", "试吃金额", "加货数量", "加货备注", "减货数量", "减货备注",
+      ]);
       headerRow.eachCell((cell) => {
         cell.fill = headerFill;
-        cell.font = { bold: true, size: 10, color: { argb: "FF9CA3AF" } };
+        cell.font = { bold: true, size: 9, color: { argb: "FF6B7280" } };
         cell.border = thinBorder;
         cell.alignment = { horizontal: "center" };
       });
@@ -525,41 +586,71 @@ export default function Home() {
         slotMap.get(s.productName)!.set(s.timeSlot, s);
       }
 
-      // Product rows
+      // Build product info map from productSuggestions
+      const productInfoMap = new Map<string, ProductSuggestion>();
+      for (const p of productSuggestions) productInfoMap.set(p.productName, p);
+
+      // Build displayFullQuantity map from products state
+      const fullQtyMap = new Map<string, number>();
+      for (const p of products) fullQtyMap.set(p.name, p.displayFullQuantity);
+
+      // ---- Product rows ----
       for (const name of productNames) {
+        const info = productInfoMap.get(name);
         const schedule = fixedSchedule[name] || [];
         const productSlots = timeSlotSuggestions.filter((s) => s.productName === name);
         const totalQty = productSlots.reduce((sum, s) => sum + s.quantity, 0);
         const totalAmount = productSlots.reduce((sum, s) => sum + s.amount, 0);
-        const slotValues = ALL_SLOTS.map((slot) => {
+        const slotQtyValues = ALL_SLOTS.map((slot) => {
           const data = slotMap.get(name)?.get(slot);
           return data && data.quantity > 0 ? data.quantity : "";
         });
-        const row = ws4.addRow([name, totalQty, totalAmount, ...slotValues]);
+        const slotAmtValues = ALL_SLOTS.map((slot) => {
+          const data = slotMap.get(name)?.get(slot);
+          return data && data.amount > 0 ? data.amount : "";
+        });
+        const row = ws4.addRow([
+          name,
+          info?.positioning ?? "",
+          info?.coldHot ?? "",
+          info?.price ?? "",
+          info?.packMultiple ?? "",
+          fullQtyMap.get(name) ?? "",
+          totalQty,
+          totalAmount,
+          ...slotQtyValues,
+          ...slotAmtValues,
+          "", "", // 试吃量、试吃金额 (filled later or empty)
+          "", "", "", "", // 加货/减货 empty columns
+        ]);
         row.eachCell((cell, colNumber) => {
           cell.border = thinBorder;
           cell.alignment = { horizontal: colNumber <= 1 ? "left" : "center" };
           cell.font = { size: 10 };
         });
-        // Highlight fixed shipment slots with deeper color
+        // Highlight fixed shipment slots
         ALL_SLOTS.forEach((slot, idx) => {
           if (schedule.includes(slot)) {
-            const cell = row.getCell(idx + 4); // offset: 品名+总数+金额 = 3
+            const cell = row.getCell(COL_OFFSET_QTY + idx);
             cell.fill = fixedSlotFill;
             cell.font = { bold: true, size: 10 };
           }
         });
       }
 
-      // 合计 row
-      const sumSlotValues = ALL_SLOTS.map((slot) =>
+      // ---- 合计 row ----
+      const sumSlotQtyValues = ALL_SLOTS.map((slot) =>
+        timeSlotSuggestions.filter((s) => s.timeSlot === slot).reduce((sum, s) => sum + s.quantity, 0) || ""
+      );
+      const sumSlotAmtValues = ALL_SLOTS.map((slot) =>
         timeSlotSuggestions.filter((s) => s.timeSlot === slot).reduce((sum, s) => sum + s.amount, 0) || ""
       );
       const sumRow = ws4.addRow([
-        "合计",
+        "合计", "", "", "", "", "",
         timeSlotSuggestions.reduce((s, item) => s + item.quantity, 0),
         timeSlotSuggestions.reduce((s, item) => s + item.amount, 0),
-        ...sumSlotValues,
+        ...sumSlotQtyValues,
+        ...sumSlotAmtValues,
       ]);
       sumRow.eachCell((cell) => {
         cell.fill = sumRowFill;
@@ -569,7 +660,7 @@ export default function Home() {
       });
       sumRow.getCell(1).alignment = { horizontal: "left" };
 
-      // 预计销售 row
+      // ---- 预计销售 row ----
       const priceMap = new Map<string, number>();
       for (const p of productSuggestions) priceMap.set(p.productName, p.price);
       let estimatedSalesTotal = 0;
@@ -583,7 +674,10 @@ export default function Home() {
         estimatedSalesTotal += amt;
         return amt || "";
       });
-      const salesRow = ws4.addRow(["预计销售", "", estimatedSalesTotal || "", ...salesSlotValues]);
+      const salesRow = ws4.addRow([
+        "预计销售", "", "", "", "", "", "", estimatedSalesTotal || "",
+        ...salesSlotValues,
+      ]);
       salesRow.eachCell((cell) => {
         cell.fill = salesRowFill;
         cell.font = { size: 10, color: { argb: "FF1D4ED8" } };
@@ -592,7 +686,7 @@ export default function Home() {
       });
       salesRow.getCell(1).alignment = { horizontal: "left" };
 
-      // 预计剩余 row (cumulative)
+      // ---- 预计剩余 row (cumulative) ----
       const shipmentTotal = timeSlotSuggestions.reduce((s, item) => s + item.amount, 0);
       let cumulativeShipment = 0;
       let cumulativeSales = 0;
@@ -604,13 +698,16 @@ export default function Home() {
         if (cumulativeShipment === 0 && cumulativeSales === 0) return "";
         return cumulativeShipment - cumulativeSales;
       });
-      const remainRow = ws4.addRow(["预计剩余", "", shipmentTotal - estimatedSalesTotal, ...remainSlotValues]);
+      const remainRow = ws4.addRow([
+        "预计剩余", "", "", "", "", "", "", shipmentTotal - estimatedSalesTotal,
+        ...remainSlotValues,
+      ]);
       remainRow.eachCell((cell, colNumber) => {
         cell.fill = remainRowFill;
         cell.border = thinBorder;
         cell.alignment = { horizontal: "center" };
         const val = cell.value as number;
-        if (colNumber >= 3 && typeof val === "number") {
+        if (colNumber >= 8 && typeof val === "number") {
           cell.font = { size: 10, color: { argb: val < 0 ? "FFEF4444" : "FF16A34A" } };
         } else {
           cell.font = { size: 10 };
@@ -618,10 +715,31 @@ export default function Home() {
       });
       remainRow.getCell(1).alignment = { horizontal: "left" };
 
-      // ========== 试吃报废表格 ==========
-      const currentDayTarget = dailyTargets.find((d) => d.date === selectedDate);
-      const shipmentAmount = currentDayTarget?.shipmentAmount ?? 0;
+      // ---- 门店陈列 row (displayFullQuantity × price per slot) ----
+      const displaySlotValues = ALL_SLOTS.map((slot) => {
+        const slotAmt = timeSlotSuggestions
+          .filter((s) => s.timeSlot === slot)
+          .reduce((sum, s) => {
+            const fq = fullQtyMap.get(s.productName) ?? 0;
+            const price = priceMap.get(s.productName) ?? 0;
+            return sum + fq * price;
+          }, 0);
+        return slotAmt > 0 ? slotAmt : "";
+      });
+      const displayTotal = products.reduce((sum, p) => sum + p.displayFullQuantity * p.price, 0);
+      const displayRow = ws4.addRow([
+        "门店陈列(满柜金额)", "", "", "", "", "", "", displayTotal || "",
+        ...displaySlotValues,
+      ]);
+      displayRow.eachCell((cell) => {
+        cell.fill = { type: "pattern" as const, pattern: "solid" as const, fgColor: { argb: "FFF0FDF4" } };
+        cell.font = { size: 10, color: { argb: "FF16A34A" } };
+        cell.border = thinBorder;
+        cell.alignment = { horizontal: "center" };
+      });
+      displayRow.getCell(1).alignment = { horizontal: "left" };
 
+      // ========== 试吃报废表格 ==========
       const tastingProducts = [
         { name: "蛋挞", keyword: "蛋挞", rate: 0.015 },
         { name: "马卡龙", keyword: "马卡龙", rate: 0.015 },
@@ -698,8 +816,8 @@ export default function Home() {
       // Empty separator row
       ws4.addRow([]);
 
-      // "试吃分配" header row (col1=品名, col2=空(总数), col3=总金额, col4-13=时段)
-      const tastingHeaderRow = ws4.addRow(["试吃分配", "", "", ...slotHeaders]);
+      // "试吃分配" header row — aligned with new column layout
+      const tastingHeaderRow = ws4.addRow(["试吃分配", "", "", "", "", "", "", "", ...slotHeaders]);
       tastingHeaderRow.eachCell((cell) => {
         cell.fill = tastingFill;
         cell.font = { bold: true, size: 10 };
@@ -723,7 +841,7 @@ export default function Home() {
           const amt = tastingSlotAmounts[tp.name][slot];
           return amt && amt > 0 ? amt : "";
         });
-        const row = ws4.addRow([tp.name, "", totalBudget, ...slotValues]);
+        const row = ws4.addRow([tp.name, "", "", "", "", "", "", totalBudget, ...slotValues]);
         row.eachCell((cell, colNumber) => {
           cell.fill = tastingFill;
           cell.font = { size: 10 };
@@ -738,7 +856,7 @@ export default function Home() {
           if (!amt || amt <= 0 || unitPrice <= 0) return "";
           return Math.ceil(amt / unitPrice);
         });
-        const qtyRow = ws4.addRow([`${tp.name}(个数)`, "", totalQty || "", ...qtySlotValues]);
+        const qtyRow = ws4.addRow([`${tp.name}(个数)`, "", "", "", "", "", "", totalQty || "", ...qtySlotValues]);
         qtyRow.eachCell((cell, colNumber) => {
           cell.fill = tastingFill;
           cell.font = { size: 10, color: { argb: "FF6B7280" } };
@@ -756,7 +874,7 @@ export default function Home() {
         }, 0);
         return total > 0 ? total : "";
       });
-      const subtotalRow = ws4.addRow(["试吃小计", "", tastingSubtotal, ...subtotalSlotValues]);
+      const subtotalRow = ws4.addRow(["试吃小计", "", "", "", "", "", "", tastingSubtotal, ...subtotalSlotValues]);
       subtotalRow.eachCell((cell, colNumber) => {
         cell.fill = tastingFill;
         cell.font = { bold: true, size: 10 };
@@ -765,7 +883,7 @@ export default function Home() {
       });
 
       // 该时段预计销售 row
-      const tastingSalesRow = ws4.addRow(["该时段预计销售", "", estimatedSalesTotal || "", ...salesSlotValues]);
+      const tastingSalesRow = ws4.addRow(["该时段预计销售", "", "", "", "", "", "", estimatedSalesTotal || "", ...salesSlotValues]);
       tastingSalesRow.eachCell((cell, colNumber) => {
         cell.fill = tastingFill;
         cell.font = { size: 10, color: { argb: "FF1D4ED8" } };
@@ -775,7 +893,7 @@ export default function Home() {
 
       // 排产报废 row
       const wasteAmount = Math.round(shipmentAmount * wasteRate);
-      const wasteRow = ws4.addRow(["排产报废", "", wasteAmount]);
+      const wasteRow = ws4.addRow(["排产报废", "", "", "", "", "", "", wasteAmount]);
       wasteRow.eachCell((cell, colNumber) => {
         cell.fill = tastingFill;
         cell.font = { size: 10 };
@@ -785,7 +903,7 @@ export default function Home() {
 
       // 损耗合计 row
       const totalLoss = Math.round(shipmentAmount * 0.06);
-      const lossRow = ws4.addRow(["损耗合计", "", totalLoss]);
+      const lossRow = ws4.addRow(["损耗合计", "", "", "", "", "", "", totalLoss]);
       lossRow.eachCell((cell, colNumber) => {
         cell.fill = tastingFill;
         cell.font = { bold: true, size: 10 };
@@ -804,7 +922,7 @@ export default function Home() {
     a.download = `排产预估_${year}_${selectedMonth}.xlsx`;
     a.click();
     URL.revokeObjectURL(url);
-  }, [monthlyTargets, dailyTargets, productSuggestions, timeSlotSuggestions, timeslotSalesRecords, fixedSchedule, year, selectedMonth, selectedDate]);
+  }, [monthlyTargets, dailyTargets, productSuggestions, timeSlotSuggestions, timeslotSalesRecords, fixedSchedule, products, year, selectedMonth, selectedDate]);
 
   // ========== AI Correction ==========
   const handleFetchAICorrection = useCallback(async () => {
