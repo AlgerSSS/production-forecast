@@ -475,12 +475,95 @@ export async function generateDailyTargetsWithCustomRevenue(
   monthlyTarget: MonthlyTarget
 ): Promise<DailyTarget[]> {
   const businessRules = await buildBusinessRulesFromDB();
-  return calculateDailyTargets(monthlyTarget, businessRules);
+  const trendFactors = await calculateHistoricalTrendFactors(monthlyTarget.year, monthlyTarget.month);
+  return calculateDailyTargets(monthlyTarget, businessRules, trendFactors);
 }
 
 export async function generateDailyTargets(monthlyTarget: MonthlyTarget): Promise<DailyTarget[]> {
   const businessRules = await buildBusinessRulesFromDB();
-  return calculateDailyTargets(monthlyTarget, businessRules);
+  const trendFactors = await calculateHistoricalTrendFactors(monthlyTarget.year, monthlyTarget.month);
+  return calculateDailyTargets(monthlyTarget, businessRules, trendFactors);
+}
+
+/**
+ * 基于历史销售数据计算每日趋势因子
+ * 用过去60天同星期几的销售额均值，计算每天相对于同dayType平均值的偏离系数
+ * 这样周一到周四之间会有差异（比如周一偏低、周三偏高等）
+ */
+async function calculateHistoricalTrendFactors(
+  year: number,
+  month: number
+): Promise<Record<string, number>> {
+  try {
+    const monthStart = `${year}-${String(month).padStart(2, "0")}-01`;
+    // 往前看60天的历史数据
+    const lookbackStart = new Date(year, month - 1, -59).toISOString().slice(0, 10);
+
+    const dailySales = await query<{ date: string; total: number }>(
+      `SELECT date, SUM(quantity) as total FROM daily_sales_record
+       WHERE date >= ? AND date < ?
+       GROUP BY date ORDER BY date`,
+      [lookbackStart, monthStart]
+    );
+
+    if (dailySales.length < 14) return {}; // 数据不足，不调整
+
+    // 读取产品价格
+    const products = await query<{ name: string; price: number }>("SELECT name, price FROM product");
+    const avgPrice = products.length > 0
+      ? products.reduce((s, p) => s + p.price, 0) / products.length
+      : 10;
+
+    // 按星期几分组计算平均营业额
+    const dowSales: Record<number, number[]> = {};
+    for (const d of dailySales) {
+      const dow = new Date(d.date + "T00:00:00").getDay();
+      if (!dowSales[dow]) dowSales[dow] = [];
+      dowSales[dow].push(d.total * avgPrice);
+    }
+
+    const dowAvg: Record<number, number> = {};
+    for (const [dow, sales] of Object.entries(dowSales)) {
+      const arr = sales;
+      dowAvg[Number(dow)] = arr.reduce((a, b) => a + b, 0) / arr.length;
+    }
+
+    // 计算同dayType的整体平均
+    const dayTypeAvg: Record<string, number> = {};
+    const dayTypeCount: Record<string, number> = {};
+    for (const [dow, avg] of Object.entries(dowAvg)) {
+      const d = Number(dow);
+      const dayType = (d === 0 || d === 6) ? "weekend" : d === 5 ? "friday" : "mondayToThursday";
+      if (!dayTypeAvg[dayType]) { dayTypeAvg[dayType] = 0; dayTypeCount[dayType] = 0; }
+      dayTypeAvg[dayType] += avg;
+      dayTypeCount[dayType] += 1;
+    }
+    for (const dt of Object.keys(dayTypeAvg)) {
+      dayTypeAvg[dt] /= dayTypeCount[dt];
+    }
+
+    // 为目标月的每一天生成趋势因子
+    const daysInMonth = new Date(year, month, 0).getDate();
+    const factors: Record<string, number> = {};
+
+    for (let d = 1; d <= daysInMonth; d++) {
+      const dateStr = `${year}-${String(month).padStart(2, "0")}-${String(d).padStart(2, "0")}`;
+      const dow = new Date(dateStr + "T00:00:00").getDay();
+      const dayType = (dow === 0 || dow === 6) ? "weekend" : dow === 5 ? "friday" : "mondayToThursday";
+
+      if (dowAvg[dow] && dayTypeAvg[dayType] && dayTypeAvg[dayType] > 0) {
+        // 因子 = 该星期几的平均 / 该dayType的整体平均
+        // 例如周一平均3000，周一到周四平均3200，则周一因子=0.9375
+        const raw = dowAvg[dow] / dayTypeAvg[dayType];
+        // 限制在 0.85~1.15 范围内，避免极端偏差
+        factors[dateStr] = Math.max(0.85, Math.min(1.15, raw));
+      }
+    }
+
+    return factors;
+  } catch {
+    return {}; // 出错时不影响正常流程
+  }
 }
 
 export async function generateProductSuggestions(
