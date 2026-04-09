@@ -11,6 +11,7 @@ import {
   TimeSlotSuggestion,
   PlanningRules,
   TimeslotSalesRecord,
+  OutOfStockRecord,
 } from "@/lib/types";
 
 // ========== Monthly Revenue Target ==========
@@ -41,7 +42,9 @@ export function calculateMonthlyTargets(
 // ========== Daily Target Split ==========
 export function calculateDailyTargets(
   monthlyTarget: MonthlyTarget,
-  rules: BusinessRules
+  rules: BusinessRules,
+  prophetFactors?: Record<string, number>,
+  aiCorrections?: Record<string, number>
 ): DailyTarget[] {
   const { year, month, enhancedRevenue } = monthlyTarget;
   const weights = rules.weekdayWeights;
@@ -73,6 +76,20 @@ export function calculateDailyTargets(
     days.push({ date: dateStr, dayOfWeek: dow, dayType, weight });
   }
 
+  // V2: Apply Prophet trend factors and AI corrections
+  for (const d of days) {
+    let w = d.weight;
+    // Mon-Thu: blend with Prophet trend factor
+    if (d.dayType === "mondayToThursday" && prophetFactors?.[d.date]) {
+      w *= prophetFactors[d.date];
+    }
+    // All days: overlay AI correction coefficient
+    if (aiCorrections?.[d.date]) {
+      w *= aiCorrections[d.date];
+    }
+    d.weight = Math.round(w * 100) / 100;
+  }
+
   // Calculate total weight
   const totalWeight = days.reduce((sum, d) => sum + d.weight, 0);
 
@@ -101,11 +118,76 @@ export function calculateDailyTargets(
   return dailyTargets;
 }
 
+// ========== V2: Stockout Loss Calculation ==========
+
+/** 营业时段：12:00 ~ 22:00（最后一个完整时段是21:00） */
+const BUSINESS_SLOTS = ["12:00", "13:00", "14:00", "15:00", "16:00", "17:00", "18:00", "19:00", "20:00", "21:00"];
+
+/**
+ * 解析运营人员输入的断货文本行
+ * 支持格式："蛋挞 8:30" / "巧克力碱水结 3:30" / "草莓可颂 15:05"
+ * 时间≤11自动+12（运营人员记录的都是下午/晚上时间）
+ */
+export function parseStockoutLine(line: string): { inputName: string; soldoutTime: string } | null {
+  const match = line.trim().match(/^(.+?)\s+(\d{1,2}):(\d{2})/);
+  if (!match) return null;
+
+  const inputName = match[1].trim();
+  let hour = parseInt(match[2]);
+  const minute = match[3];
+
+  if (hour <= 11) hour += 12;
+
+  return { inputName, soldoutTime: `${hour}:${minute}` };
+}
+
+/**
+ * 计算损失时段：从卖完时间的下一个整点到最后营业时段(21:00)
+ * 使用营业时段（12:00~22:00），不是出货时段（10:00~19:00）
+ */
+export function calculateLossSlots(soldoutTime: string): string[] {
+  const [h, m] = soldoutTime.split(":").map(Number);
+  const nextSlotHour = m > 0 ? h + 1 : h + 1;
+  const slots: string[] = [];
+  for (let hour = nextSlotHour; hour <= 21; hour++) {
+    slots.push(`${String(hour).padStart(2, "0")}:00`);
+  }
+  return slots;
+}
+
+/**
+ * 计算单条断货记录的损失数量和金额
+ * 基于该产品在对应dayType下各时段的历史平均销量
+ */
+export function calculateStockoutLoss(
+  record: OutOfStockRecord,
+  timeslotHistory: TimeslotSalesRecord[],
+  productPrice: number
+): { lossQty: number; lossAmount: number } {
+  const historyMap = new Map<string, number>();
+  for (const r of timeslotHistory) {
+    if (r.productName === record.productName && r.dayType === record.dayType) {
+      historyMap.set(r.timeSlot, r.avgQuantity);
+    }
+  }
+
+  let lossQty = 0;
+  for (const slot of record.lossSlots) {
+    lossQty += historyMap.get(slot) || 0;
+  }
+
+  return {
+    lossQty: Math.round(lossQty),
+    lossAmount: Math.round(lossQty * productPrice),
+  };
+}
+
 // ========== Sales Baseline Calculation ==========
 export function calculateSalesBaselines(
   salesRecords: DailySalesRecord[],
   products: Product[],
-  baselineOverrides?: Record<string, { mondayToThursday: number; friday: number; weekend: number }>
+  baselineOverrides?: Record<string, { mondayToThursday: number; friday: number; weekend: number }>,
+  stockoutRecords?: OutOfStockRecord[]
 ): ProductSalesBaseline[] {
   const productNameSet = new Set(products.map((p) => p.name));
 
@@ -125,6 +207,17 @@ export function calculateSalesBaselines(
     if (!dailyAgg[name]) dailyAgg[name] = {};
     if (!dailyAgg[name][record.date]) dailyAgg[name][record.date] = 0;
     dailyAgg[name][record.date] += record.quantity;
+  }
+
+  // V2: Apply stockout loss restoration (ideal quantity = actual + loss)
+  if (stockoutRecords && stockoutRecords.length > 0) {
+    for (const oos of stockoutRecords) {
+      const name = oos.productName;
+      if (!productNameSet.has(name)) continue;
+      if (!dailyAgg[name]) dailyAgg[name] = {};
+      if (!dailyAgg[name][oos.date]) dailyAgg[name][oos.date] = 0;
+      dailyAgg[name][oos.date] += oos.estimatedLossQty;
+    }
   }
 
   // Then classify by day type

@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { GoogleGenerativeAI } from "@google/generative-ai";
 import { query } from "@/lib/db";
+import { buildPrompt } from "@/lib/engine/prompt-engine";
 
 interface BaselineRow {
   product_name: string;
@@ -38,6 +39,8 @@ const DAY_TYPE_COL: Record<string, string> = {
   weekend: "avg_weekend",
 };
 
+const USE_DB_PROMPT = process.env.USE_DB_PROMPT !== "false";
+
 export async function POST(req: NextRequest) {
   try {
     const apiKey = process.env.GEMINI_API_KEY;
@@ -52,7 +55,6 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: "缺少必要参数" }, { status: 400 });
     }
 
-    // Fetch historical baselines
     const baselines = await query<BaselineRow>(
       "SELECT product_name, avg_monday_to_thursday, avg_friday, avg_weekend FROM product_sales_baseline"
     );
@@ -62,7 +64,6 @@ export async function POST(req: NextRequest) {
       baselineMap.set(row.product_name, row[col as keyof BaselineRow] as number);
     }
 
-    // Fetch timeslot distribution for reference
     const timeslotData = await query<TimeslotRow>(
       "SELECT product_name, time_slot, avg_quantity FROM timeslot_sales_record WHERE day_type = ? ORDER BY product_name, time_slot",
       [dayType]
@@ -73,7 +74,6 @@ export async function POST(req: NextRequest) {
       timeslotMap[row.product_name].push({ timeSlot: row.time_slot, avgQty: row.avg_quantity });
     }
 
-    // Build prompt context — include current total for AI reference
     const dayLabel = DAY_TYPE_LABELS[dayType] || dayType;
     const products = productSuggestions as ProductInput[];
 
@@ -96,7 +96,140 @@ export async function POST(req: NextRequest) {
       }
     }
 
-    const prompt = `请根据历史销售数据，对当前的单品出货建议进行校正。
+    let systemInstruction: string;
+    let prompt: string;
+    let modelName = "gemini-2.5-flash";
+    let temperature = 0.1;
+    let topP = 0.85;
+
+    if (USE_DB_PROMPT) {
+      try {
+        const vars: Record<string, string> = {
+          shipmentAmount: String(shipmentAmount),
+          productCount: String(products.length),
+          productContext: `当前日期：${date || "未知"}\n日期类型：${dayLabel}\n目标出货金额：${shipmentAmount}\n当前建议总金额：${currentTotal}\n\n【当前系统建议方案】\n${productContext}`,
+          timeslotContext,
+        };
+        const built = await buildPrompt("product_correction", vars);
+        systemInstruction = built.systemInstruction;
+        prompt = `请根据历史销售数据，对当前的单品出货建议进行校正。\n\n${built.prompt}`;
+        modelName = built.model;
+        temperature = built.temperature;
+        topP = built.topP;
+      } catch {
+        systemInstruction = "你是一个马来西亚烘焙店的排产专家。请根据历史销售数据对单品出货建议进行校正，严格遵循总金额守恒原则，只返回 JSON。";
+        prompt = buildFallbackProductPrompt(date, dayLabel, shipmentAmount, currentTotal, productContext, timeslotContext, products.length);
+      }
+    } else {
+      systemInstruction = "你是一个马来西亚烘焙店的排产专家。请根据历史销售数据对单品出货建议进行校正，严格遵循总金额守恒原则，只返回 JSON。";
+      prompt = buildFallbackProductPrompt(date, dayLabel, shipmentAmount, currentTotal, productContext, timeslotContext, products.length);
+    }
+
+    const genAI = new GoogleGenerativeAI(apiKey);
+    const model = genAI.getGenerativeModel({
+      model: modelName,
+      systemInstruction,
+      generationConfig: { temperature, topP, responseMimeType: "application/json" },
+    });
+    const result = await model.generateContent(prompt);
+    const text = result.response.text();
+
+    let parsed;
+    try {
+      parsed = JSON.parse(text);
+    } catch {
+      return NextResponse.json({ error: "AI 返回格式解析失败", rawText: text }, { status: 500 });
+    }
+
+    if (!parsed.corrections || !Array.isArray(parsed.corrections)) {
+      return NextResponse.json({ error: "AI 返回的 corrections 格式不正确", rawText: text }, { status: 500 });
+    }
+
+    const productMap = new Map<string, ProductInput>();
+    for (const p of productSuggestions as ProductInput[]) {
+      productMap.set(p.productName, p);
+    }
+
+    const corrections = parsed.corrections.map((c: { productName: string; suggestedQuantity: number; reason: string }) => {
+      const product = productMap.get(c.productName);
+      let qty = Math.max(0, Math.round(c.suggestedQuantity));
+      if (product && product.unitType === "batch" && product.packMultiple > 1) {
+        qty = Math.round(qty / product.packMultiple) * product.packMultiple;
+      }
+      return { productName: c.productName, suggestedQuantity: qty, reason: c.reason || "" };
+    });
+
+    const correctionMap = new Map<string, number>();
+    for (const c of corrections) {
+      correctionMap.set(c.productName, c.suggestedQuantity);
+    }
+    let correctedTotal = 0;
+    for (const p of products) {
+      const qty = correctionMap.get(p.productName) ?? (p.adjustedQuantity ?? p.roundedQuantity);
+      correctedTotal += qty * p.price;
+    }
+
+    // 金额兜底
+    const diff = shipmentAmount - correctedTotal;
+    const tolerance = shipmentAmount * 0.02;
+    if (Math.abs(diff) > tolerance) {
+      const adjustable = corrections
+        .map((c: { productName: string; suggestedQuantity: number; reason: string }) => ({
+          correction: c,
+          product: productMap.get(c.productName),
+        }))
+        .filter((x: { product: ProductInput | undefined }) => x.product)
+        .sort((a: { product: ProductInput }, b: { product: ProductInput }) => {
+          const posOrder: Record<string, number> = { "TOP": 0, "潜在TOP": 1, "其他": 2 };
+          const pa = posOrder[a.product.positioning] ?? 2;
+          const pb = posOrder[b.product.positioning] ?? 2;
+          if (pa !== pb) return pa - pb;
+          return b.product.price - a.product.price;
+        });
+
+      let remaining = diff;
+      for (const { correction: c, product: p } of adjustable) {
+        if (Math.abs(remaining) <= tolerance) break;
+        if (!p) continue;
+        const unit = (p.unitType === "batch" && p.packMultiple > 1) ? p.packMultiple : 1;
+        const stepAmount = unit * p.price;
+        if (remaining > 0 && stepAmount <= remaining * 1.5) {
+          c.suggestedQuantity += unit;
+          remaining -= stepAmount;
+          correctionMap.set(c.productName, c.suggestedQuantity);
+        } else if (remaining < 0 && c.suggestedQuantity > unit) {
+          c.suggestedQuantity -= unit;
+          remaining += stepAmount;
+          correctionMap.set(c.productName, c.suggestedQuantity);
+        }
+      }
+      correctedTotal = 0;
+      for (const p of products) {
+        const qty = correctionMap.get(p.productName) ?? (p.adjustedQuantity ?? p.roundedQuantity);
+        correctedTotal += qty * p.price;
+      }
+    }
+
+    return NextResponse.json({
+      corrections,
+      analysis: parsed.analysis || "",
+      correctedTotal,
+      targetAmount: shipmentAmount,
+    });
+  } catch (error) {
+    console.error("AI product correction error:", error);
+    return NextResponse.json(
+      { error: `AI 调用失败: ${error instanceof Error ? error.message : String(error)}` },
+      { status: 500 }
+    );
+  }
+}
+
+function buildFallbackProductPrompt(
+  date: string, dayLabel: string, shipmentAmount: number, currentTotal: number,
+  productContext: string, timeslotContext: string, productCount: number
+): string {
+  return `请根据历史销售数据，对当前的单品出货建议进行校正。
 
 当前日期：${date || "未知"}
 日期类型：${dayLabel}
@@ -127,125 +260,5 @@ ${timeslotContext}
   ]
 }
 
-corrections 数组必须包含所有 ${products.length} 个产品，每个产品都要给出 suggestedQuantity。`;
-
-    const genAI = new GoogleGenerativeAI(apiKey);
-    const model = genAI.getGenerativeModel({
-      model: "gemini-2.5-flash",
-      systemInstruction: "你是一个马来西亚烘焙店的排产专家。请根据历史销售数据对单品出货建议进行校正，严格遵循总金额守恒原则，只返回 JSON。",
-      generationConfig: {
-        temperature: 0.1,
-        topP: 0.85,
-        responseMimeType: "application/json",
-      },
-    });
-    const result = await model.generateContent(prompt);
-    const text = result.response.text();
-
-    // Parse JSON — responseMimeType 保证返回纯 JSON
-    let parsed;
-    try {
-      parsed = JSON.parse(text);
-    } catch {
-      return NextResponse.json(
-        { error: "AI 返回格式解析失败", rawText: text },
-        { status: 500 }
-      );
-    }
-
-    if (!parsed.corrections || !Array.isArray(parsed.corrections)) {
-      return NextResponse.json(
-        { error: "AI 返回的 corrections 格式不正确", rawText: text },
-        { status: 500 }
-      );
-    }
-
-    // Post-process: enforce packMultiple for batch products
-    const productMap = new Map<string, ProductInput>();
-    for (const p of productSuggestions as ProductInput[]) {
-      productMap.set(p.productName, p);
-    }
-
-    const corrections = parsed.corrections.map((c: { productName: string; suggestedQuantity: number; reason: string }) => {
-      const product = productMap.get(c.productName);
-      let qty = Math.max(0, Math.round(c.suggestedQuantity));
-      if (product && product.unitType === "batch" && product.packMultiple > 1) {
-        qty = Math.round(qty / product.packMultiple) * product.packMultiple;
-      }
-      return {
-        productName: c.productName,
-        suggestedQuantity: qty,
-        reason: c.reason || "",
-      };
-    });
-
-    // Calculate corrected total amount
-    const correctionMap = new Map<string, number>();
-    for (const c of corrections) {
-      correctionMap.set(c.productName, c.suggestedQuantity);
-    }
-    let correctedTotal = 0;
-    for (const p of products) {
-      const qty = correctionMap.get(p.productName) ?? (p.adjustedQuantity ?? p.roundedQuantity);
-      correctedTotal += qty * p.price;
-    }
-
-    // 金额兜底：如果 AI 校正后总金额偏差超过 2%，微调 TOP/潜在TOP 品来缩小差距
-    const diff = shipmentAmount - correctedTotal;
-    const tolerance = shipmentAmount * 0.02;
-    if (Math.abs(diff) > tolerance) {
-      // 按定位优先级排序：TOP > 潜在TOP > 其他，同级按单价从高到低
-      const adjustable = corrections
-        .map((c: { productName: string; suggestedQuantity: number; reason: string }) => ({
-          correction: c,
-          product: productMap.get(c.productName),
-        }))
-        .filter((x: { product: ProductInput | undefined }) => x.product)
-        .sort((a: { product: ProductInput }, b: { product: ProductInput }) => {
-          const posOrder: Record<string, number> = { "TOP": 0, "潜在TOP": 1, "其他": 2 };
-          const pa = posOrder[a.product.positioning] ?? 2;
-          const pb = posOrder[b.product.positioning] ?? 2;
-          if (pa !== pb) return pa - pb;
-          return b.product.price - a.product.price;
-        });
-
-      let remaining = diff;
-      for (const { correction: c, product: p } of adjustable) {
-        if (Math.abs(remaining) <= tolerance) break;
-        if (!p) continue;
-        const unit = (p.unitType === "batch" && p.packMultiple > 1) ? p.packMultiple : 1;
-        const stepAmount = unit * p.price;
-        if (remaining > 0 && stepAmount <= remaining * 1.5) {
-          // 需要增加金额 → 增加数量
-          c.suggestedQuantity += unit;
-          remaining -= stepAmount;
-          correctionMap.set(c.productName, c.suggestedQuantity);
-        } else if (remaining < 0 && c.suggestedQuantity > unit) {
-          // 需要减少金额 → 减少数量（但不减到 0）
-          c.suggestedQuantity -= unit;
-          remaining += stepAmount;
-          correctionMap.set(c.productName, c.suggestedQuantity);
-        }
-      }
-      // Recalculate
-      correctedTotal = 0;
-      for (const p of products) {
-        const qty = correctionMap.get(p.productName) ?? (p.adjustedQuantity ?? p.roundedQuantity);
-        correctedTotal += qty * p.price;
-      }
-    }
-
-    return NextResponse.json({
-      corrections,
-      analysis: parsed.analysis || "",
-      correctedTotal,
-      targetAmount: shipmentAmount,
-    });
-  } catch (error) {
-    console.error("AI product correction error:", error);
-    return NextResponse.json(
-      { error: `AI 调用失败: ${error instanceof Error ? error.message : String(error)}` },
-      { status: 500 }
-    );
-  }
+corrections 数组必须包含所有 ${productCount} 个产品，每个产品都要给出 suggestedQuantity。`;
 }

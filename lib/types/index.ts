@@ -236,3 +236,134 @@ export interface AIProductCorrection {
   suggestedQuantity: number;
   reason: string;
 }
+
+// ========== V2: Out of Stock Types ==========
+export interface OutOfStockRecord {
+  id?: number;
+  date: string;
+  productName: string;
+  inputName: string;
+  soldoutTime: string;
+  soldoutSlot: string;
+  dayType: "mondayToThursday" | "friday" | "weekend";
+  lossSlots: string[];
+  estimatedLossQty: number;
+  estimatedLossAmount: number;
+}
+
+// ========== V2: Context Event Types ==========
+export interface ContextEvent {
+  id?: number;
+  date: string;
+  eventType: "weather" | "competition" | "promotion" | "internal" | "other";
+  eventTag: string;
+  description: string;
+  impactProducts: string;
+  createdBy: string;
+}
+
+// ========== V2: Daily Feed & Review Types ==========
+export interface DailyFeedData {
+  date: string;
+  dayType: "mondayToThursday" | "friday" | "weekend";
+  targetRevenue: number;
+  actualRevenue: number;
+  idealRevenue: number;
+  achievementRate: number;
+  productSales: Array<{
+    productName: string;
+    positioning: string;
+    forecastQty: number;
+    actualQty: number;
+    idealQty: number;
+    stockoutPeriods: string[];
+    wastageQty: number;
+  }>;
+  timeslotSales: Array<{
+    timeSlot: string;
+    totalRevenue: number;
+    topProducts: string[];
+  }>;
+  contextEvents: ContextEvent[];
+  weather?: {
+    condition: string;
+    temperature: number;
+    humidity: number;
+  };
+}
+
+export interface DailyReviewResult {
+  id?: number;
+  date: string;
+  review: {
+    summary: string;
+    highlights: string[];
+    painPoints: string[];
+    stockoutAnalysis: Array<{
+      product: string;
+      lossQty: number;
+      lossAmount: number;
+      suggestion: string;
+    }>;
+    timeslotInsights: string[];
+  };
+  tomorrowSuggestions: {
+    overallCoefficientAdjust: number;
+    reason: string;
+    productAdjustments: Array<{
+      productName: string;
+      adjustRatio: number;
+      reason: string;
+    }>;
+    timeslotAdjustments: Array<{
+      productName: string;
+      timeSlot: string;
+      adjustRatio: number;
+      reason: string;
+    }>;
+  };
+  adopted: boolean;
+}
+
+// ========== V2: Prompt Management Types ==========
+export interface PromptSegment {
+  id?: number;
+  segmentKey: string;
+  category: "role" | "knowledge" | "rule" | "format" | "context";
+  title: string;
+  content: string;
+  variables: string;
+  sortOrder: number;
+  isActive: boolean;
+  version: number;
+}
+
+export interface PromptTemplate {
+  id?: number;
+  templateKey: string;
+  title: string;
+  systemInstructionKey: string;
+  segmentKeys: string;
+  model: string;
+  temperature: number;
+  topP: number;
+  isActive: boolean;
+}
+
+// ========== V2: Empowerment Types ==========
+export interface EmpowermentEvent {
+  id?: number;
+  eventName: string;
+  eventType: "market" | "operation";
+  startDate: string;
+  endDate: string;
+  targetProducts: string;
+  platform: string;
+  exposureCount: number;
+  clickCount: number;
+  cost: number;
+  operationType: string;
+  operationDetail: string;
+  reviewJson: string;
+  reviewedAt: string | null;
+}

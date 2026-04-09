@@ -1,0 +1,4 @@
+prophet
+fastapi
+uvicorn
+pandas

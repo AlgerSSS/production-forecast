@@ -30,6 +30,12 @@ import {
   ImportResult,
   Holiday,
   TimeslotSalesRecord,
+  OutOfStockRecord,
+  ContextEvent,
+  DailyReviewResult,
+  PromptSegment,
+  PromptTemplate,
+  EmpowermentEvent,
 } from "@/lib/types";
 import { query, execute } from "@/lib/db";
 
@@ -702,4 +708,311 @@ export async function importTimeslotSalesData(
 export async function hasTimeslotSalesData(): Promise<boolean> {
   const rows = await query<{ cnt: number }>("SELECT COUNT(*) as cnt FROM timeslot_sales_record");
   return (rows[0] as { cnt: number }).cnt > 0;
+}
+
+// ========== V2: Out of Stock Record Actions ==========
+interface OutOfStockRow {
+  id: number;
+  date: string;
+  product_name: string;
+  input_name: string;
+  soldout_time: string;
+  soldout_slot: string;
+  day_type: string;
+  loss_slots: string;
+  estimated_loss_qty: number;
+  estimated_loss_amount: number;
+}
+
+function rowToOutOfStock(row: OutOfStockRow): OutOfStockRecord {
+  return {
+    id: row.id,
+    date: row.date,
+    productName: row.product_name,
+    inputName: row.input_name,
+    soldoutTime: row.soldout_time,
+    soldoutSlot: row.soldout_slot,
+    dayType: row.day_type as OutOfStockRecord["dayType"],
+    lossSlots: row.loss_slots ? row.loss_slots.split(",") : [],
+    estimatedLossQty: row.estimated_loss_qty,
+    estimatedLossAmount: row.estimated_loss_amount,
+  };
+}
+
+export async function getOutOfStockRecords(date?: string): Promise<OutOfStockRecord[]> {
+  let sql = "SELECT * FROM out_of_stock_record";
+  const params: string[] = [];
+  if (date) {
+    sql += " WHERE date = ?";
+    params.push(date);
+  }
+  sql += " ORDER BY date DESC, product_name";
+  const rows = await query<OutOfStockRow>(sql, params);
+  return rows.map(rowToOutOfStock);
+}
+
+export async function saveOutOfStockRecords(records: OutOfStockRecord[]): Promise<void> {
+  for (const r of records) {
+    await execute(
+      `INSERT INTO out_of_stock_record (date, product_name, input_name, soldout_time, soldout_slot, day_type, loss_slots, estimated_loss_qty, estimated_loss_amount)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      [r.date, r.productName, r.inputName, r.soldoutTime, r.soldoutSlot, r.dayType, r.lossSlots.join(","), r.estimatedLossQty, r.estimatedLossAmount]
+    );
+  }
+}
+
+export async function deleteOutOfStockByDate(date: string): Promise<void> {
+  await execute("DELETE FROM out_of_stock_record WHERE date = ?", [date]);
+}
+
+// ========== V2: Context Event Actions ==========
+interface ContextEventRow {
+  id: number;
+  date: string;
+  event_type: string;
+  event_tag: string;
+  description: string;
+  impact_products: string;
+  created_by: string;
+}
+
+function rowToContextEvent(row: ContextEventRow): ContextEvent {
+  return {
+    id: row.id,
+    date: row.date,
+    eventType: row.event_type as ContextEvent["eventType"],
+    eventTag: row.event_tag,
+    description: row.description,
+    impactProducts: row.impact_products,
+    createdBy: row.created_by,
+  };
+}
+
+export async function getContextEvents(date?: string, rangeStart?: string, rangeEnd?: string): Promise<ContextEvent[]> {
+  let sql = "SELECT * FROM context_event";
+  const params: string[] = [];
+  if (date) {
+    sql += " WHERE date = ?";
+    params.push(date);
+  } else if (rangeStart && rangeEnd) {
+    sql += " WHERE date >= ? AND date <= ?";
+    params.push(rangeStart, rangeEnd);
+  }
+  sql += " ORDER BY date";
+  const rows = await query<ContextEventRow>(sql, params);
+  return rows.map(rowToContextEvent);
+}
+
+export async function addContextEvent(event: Omit<ContextEvent, "id">): Promise<void> {
+  await execute(
+    `INSERT INTO context_event (date, event_type, event_tag, description, impact_products, created_by)
+     VALUES (?, ?, ?, ?, ?, ?)`,
+    [event.date, event.eventType, event.eventTag, event.description, event.impactProducts, event.createdBy || "manual"]
+  );
+}
+
+export async function deleteContextEvent(id: number): Promise<void> {
+  await execute("DELETE FROM context_event WHERE id = ?", [id]);
+}
+
+// ========== V2: Daily Review Actions ==========
+interface DailyReviewRow {
+  id: number;
+  date: string;
+  review_json: string;
+  suggestions_json: string;
+  adopted: boolean;
+}
+
+export async function getDailyReview(date: string): Promise<DailyReviewResult | null> {
+  const rows = await query<DailyReviewRow>(
+    "SELECT * FROM daily_review WHERE date = ?",
+    [date]
+  );
+  if (rows.length === 0) return null;
+  const row = rows[0];
+  return {
+    id: row.id,
+    date: row.date,
+    review: JSON.parse(row.review_json),
+    tomorrowSuggestions: JSON.parse(row.suggestions_json),
+    adopted: row.adopted,
+  };
+}
+
+export async function saveDailyReview(date: string, reviewJson: string, suggestionsJson: string): Promise<void> {
+  await execute(
+    `INSERT INTO daily_review (date, review_json, suggestions_json)
+     VALUES (?, ?, ?)
+     ON CONFLICT (date) DO UPDATE SET review_json = EXCLUDED.review_json, suggestions_json = EXCLUDED.suggestions_json, adopted = false`,
+    [date, reviewJson, suggestionsJson]
+  );
+}
+
+export async function adoptDailyReview(date: string): Promise<void> {
+  await execute("UPDATE daily_review SET adopted = true WHERE date = ?", [date]);
+}
+
+// ========== V2: Prompt Segment Actions ==========
+interface PromptSegmentRow {
+  id: number;
+  segment_key: string;
+  category: string;
+  title: string;
+  content: string;
+  variables: string;
+  sort_order: number;
+  is_active: boolean;
+  version: number;
+}
+
+function rowToPromptSegment(row: PromptSegmentRow): PromptSegment {
+  return {
+    id: row.id,
+    segmentKey: row.segment_key,
+    category: row.category as PromptSegment["category"],
+    title: row.title,
+    content: row.content,
+    variables: row.variables,
+    sortOrder: row.sort_order,
+    isActive: row.is_active,
+    version: row.version,
+  };
+}
+
+export async function getPromptSegments(category?: string): Promise<PromptSegment[]> {
+  let sql = "SELECT * FROM prompt_segment";
+  const params: string[] = [];
+  if (category) {
+    sql += " WHERE category = ?";
+    params.push(category);
+  }
+  sql += " ORDER BY category, sort_order";
+  const rows = await query<PromptSegmentRow>(sql, params);
+  return rows.map(rowToPromptSegment);
+}
+
+export async function upsertPromptSegment(segment: Omit<PromptSegment, "id">): Promise<void> {
+  await execute(
+    `INSERT INTO prompt_segment (segment_key, category, title, content, variables, sort_order, is_active, version)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+     ON CONFLICT (segment_key) DO UPDATE SET
+       category = EXCLUDED.category, title = EXCLUDED.title, content = EXCLUDED.content,
+       variables = EXCLUDED.variables, sort_order = EXCLUDED.sort_order, is_active = EXCLUDED.is_active,
+       version = prompt_segment.version + 1`,
+    [segment.segmentKey, segment.category, segment.title, segment.content, segment.variables, segment.sortOrder, segment.isActive, segment.version]
+  );
+}
+
+export async function deletePromptSegment(segmentKey: string): Promise<void> {
+  await execute("DELETE FROM prompt_segment WHERE segment_key = ?", [segmentKey]);
+}
+
+// ========== V2: Prompt Template Actions ==========
+interface PromptTemplateRow {
+  id: number;
+  template_key: string;
+  title: string;
+  system_instruction_key: string;
+  segment_keys: string;
+  model: string;
+  temperature: number;
+  top_p: number;
+  is_active: boolean;
+}
+
+function rowToPromptTemplate(row: PromptTemplateRow): PromptTemplate {
+  return {
+    id: row.id,
+    templateKey: row.template_key,
+    title: row.title,
+    systemInstructionKey: row.system_instruction_key,
+    segmentKeys: row.segment_keys,
+    model: row.model,
+    temperature: row.temperature,
+    topP: row.top_p,
+    isActive: row.is_active,
+  };
+}
+
+export async function getPromptTemplates(): Promise<PromptTemplate[]> {
+  const rows = await query<PromptTemplateRow>("SELECT * FROM prompt_template ORDER BY template_key");
+  return rows.map(rowToPromptTemplate);
+}
+
+export async function upsertPromptTemplate(template: Omit<PromptTemplate, "id">): Promise<void> {
+  await execute(
+    `INSERT INTO prompt_template (template_key, title, system_instruction_key, segment_keys, model, temperature, top_p, is_active)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+     ON CONFLICT (template_key) DO UPDATE SET
+       title = EXCLUDED.title, system_instruction_key = EXCLUDED.system_instruction_key,
+       segment_keys = EXCLUDED.segment_keys, model = EXCLUDED.model, temperature = EXCLUDED.temperature,
+       top_p = EXCLUDED.top_p, is_active = EXCLUDED.is_active`,
+    [template.templateKey, template.title, template.systemInstructionKey, template.segmentKeys, template.model, template.temperature, template.topP, template.isActive]
+  );
+}
+
+export async function deletePromptTemplate(templateKey: string): Promise<void> {
+  await execute("DELETE FROM prompt_template WHERE template_key = ?", [templateKey]);
+}
+
+// ========== V2: Empowerment Event Actions ==========
+interface EmpowermentEventRow {
+  id: number;
+  event_name: string;
+  event_type: string;
+  start_date: string;
+  end_date: string;
+  target_products: string;
+  platform: string;
+  exposure_count: number;
+  click_count: number;
+  cost: number;
+  operation_type: string;
+  operation_detail: string;
+  review_json: string;
+  reviewed_at: string | null;
+}
+
+function rowToEmpowermentEvent(row: EmpowermentEventRow): EmpowermentEvent {
+  return {
+    id: row.id,
+    eventName: row.event_name,
+    eventType: row.event_type as EmpowermentEvent["eventType"],
+    startDate: row.start_date,
+    endDate: row.end_date,
+    targetProducts: row.target_products,
+    platform: row.platform,
+    exposureCount: row.exposure_count,
+    clickCount: row.click_count,
+    cost: row.cost,
+    operationType: row.operation_type,
+    operationDetail: row.operation_detail,
+    reviewJson: row.review_json,
+    reviewedAt: row.reviewed_at,
+  };
+}
+
+export async function getEmpowermentEvents(): Promise<EmpowermentEvent[]> {
+  const rows = await query<EmpowermentEventRow>("SELECT * FROM empowerment_event ORDER BY start_date DESC");
+  return rows.map(rowToEmpowermentEvent);
+}
+
+export async function addEmpowermentEvent(event: Omit<EmpowermentEvent, "id" | "reviewJson" | "reviewedAt">): Promise<void> {
+  await execute(
+    `INSERT INTO empowerment_event (event_name, event_type, start_date, end_date, target_products, platform, exposure_count, click_count, cost, operation_type, operation_detail)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    [event.eventName, event.eventType, event.startDate, event.endDate, event.targetProducts, event.platform, event.exposureCount, event.clickCount, event.cost, event.operationType, event.operationDetail]
+  );
+}
+
+export async function updateEmpowermentReview(id: number, reviewJson: string): Promise<void> {
+  await execute(
+    "UPDATE empowerment_event SET review_json = ?, reviewed_at = NOW() WHERE id = ?",
+    [reviewJson, id]
+  );
+}
+
+export async function deleteEmpowermentEvent(id: number): Promise<void> {
+  await execute("DELETE FROM empowerment_event WHERE id = ?", [id]);
 }

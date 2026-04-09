@@ -117,6 +117,98 @@ CREATE TABLE IF NOT EXISTS timeslot_sales_record (
 );
 CREATE INDEX IF NOT EXISTS idx_tsr_day_type ON timeslot_sales_record (day_type);
 
+-- 断货记录表（支撑"理想营业额"）
+CREATE TABLE IF NOT EXISTS out_of_stock_record (
+  id SERIAL PRIMARY KEY,
+  date VARCHAR(10) NOT NULL,
+  product_name VARCHAR(200) NOT NULL,
+  input_name VARCHAR(200) DEFAULT '',
+  soldout_time VARCHAR(10) NOT NULL,
+  soldout_slot VARCHAR(10) NOT NULL,
+  day_type VARCHAR(20) NOT NULL,
+  loss_slots TEXT DEFAULT '',
+  estimated_loss_qty DOUBLE PRECISION DEFAULT 0,
+  estimated_loss_amount DOUBLE PRECISION DEFAULT 0,
+  created_at TIMESTAMPTZ DEFAULT NOW()
+);
+CREATE INDEX IF NOT EXISTS idx_oos_date ON out_of_stock_record (date);
+CREATE INDEX IF NOT EXISTS idx_oos_product ON out_of_stock_record (product_name);
+
+-- 事件上下文表（运行时动态注入AI prompt）
+CREATE TABLE IF NOT EXISTS context_event (
+  id SERIAL PRIMARY KEY,
+  date VARCHAR(10) NOT NULL,
+  event_type VARCHAR(50) NOT NULL,
+  event_tag VARCHAR(100) NOT NULL,
+  description TEXT DEFAULT '',
+  impact_products TEXT DEFAULT '',
+  created_by VARCHAR(50) DEFAULT 'manual',
+  created_at TIMESTAMPTZ DEFAULT NOW()
+);
+CREATE INDEX IF NOT EXISTS idx_ce_date ON context_event (date);
+
+-- 每日复盘结果表
+CREATE TABLE IF NOT EXISTS daily_review (
+  id SERIAL PRIMARY KEY,
+  date VARCHAR(10) NOT NULL,
+  review_json TEXT NOT NULL,
+  suggestions_json TEXT NOT NULL,
+  adopted BOOLEAN DEFAULT FALSE,
+  created_at TIMESTAMPTZ DEFAULT NOW(),
+  CONSTRAINT uk_review_date UNIQUE (date)
+);
+
+-- Prompt片段表（组合式Prompt积木块）
+CREATE TABLE IF NOT EXISTS prompt_segment (
+  id SERIAL PRIMARY KEY,
+  segment_key VARCHAR(100) NOT NULL,
+  category VARCHAR(50) NOT NULL,
+  title VARCHAR(200) NOT NULL,
+  content TEXT NOT NULL,
+  variables TEXT DEFAULT '',
+  sort_order INT DEFAULT 0,
+  is_active BOOLEAN DEFAULT TRUE,
+  version INT DEFAULT 1,
+  created_at TIMESTAMPTZ DEFAULT NOW(),
+  updated_at TIMESTAMPTZ DEFAULT NOW(),
+  CONSTRAINT uk_segment_key UNIQUE (segment_key)
+);
+
+-- Prompt组合模板表
+CREATE TABLE IF NOT EXISTS prompt_template (
+  id SERIAL PRIMARY KEY,
+  template_key VARCHAR(100) NOT NULL,
+  title VARCHAR(200) NOT NULL,
+  system_instruction_key VARCHAR(100) NOT NULL,
+  segment_keys TEXT NOT NULL,
+  model VARCHAR(50) DEFAULT 'gemini-2.5-flash',
+  temperature DOUBLE PRECISION DEFAULT 0.1,
+  top_p DOUBLE PRECISION DEFAULT 0.85,
+  is_active BOOLEAN DEFAULT TRUE,
+  created_at TIMESTAMPTZ DEFAULT NOW(),
+  updated_at TIMESTAMPTZ DEFAULT NOW(),
+  CONSTRAINT uk_template_key UNIQUE (template_key)
+);
+
+-- 赋能事件表（市场/营运赋能复盘）
+CREATE TABLE IF NOT EXISTS empowerment_event (
+  id SERIAL PRIMARY KEY,
+  event_name VARCHAR(200) NOT NULL,
+  event_type VARCHAR(50) NOT NULL,
+  start_date VARCHAR(10) NOT NULL,
+  end_date VARCHAR(10) NOT NULL,
+  target_products TEXT DEFAULT '',
+  platform VARCHAR(100) DEFAULT '',
+  exposure_count INT DEFAULT 0,
+  click_count INT DEFAULT 0,
+  cost DOUBLE PRECISION DEFAULT 0,
+  operation_type VARCHAR(100) DEFAULT '',
+  operation_detail TEXT DEFAULT '',
+  review_json TEXT DEFAULT '',
+  reviewed_at TIMESTAMPTZ DEFAULT NULL,
+  created_at TIMESTAMPTZ DEFAULT NOW()
+);
+
 -- 自动更新 updated_at 的触发器函数
 CREATE OR REPLACE FUNCTION update_updated_at()
 RETURNS TRIGGER AS $$
@@ -134,7 +226,8 @@ BEGIN
   FOR tbl IN SELECT unnest(ARRAY[
     'product', 'product_strategy', 'product_sales_baseline',
     'product_alias', 'business_rule', 'holiday',
-    'fixed_shipment_schedule', 'timeslot_sales_record'
+    'fixed_shipment_schedule', 'timeslot_sales_record',
+    'prompt_segment', 'prompt_template'
   ])
   LOOP
     EXECUTE format(

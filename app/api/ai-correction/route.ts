@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { GoogleGenerativeAI } from "@google/generative-ai";
 import { query } from "@/lib/db";
+import { buildPrompt } from "@/lib/engine/prompt-engine";
 
 interface HolidayRow {
   date: string;
@@ -9,6 +10,14 @@ interface HolidayRow {
   coefficient: number | null;
   note: string;
 }
+
+interface ContextEventRow {
+  date: string;
+  event_tag: string;
+  description: string;
+}
+
+const USE_DB_PROMPT = process.env.USE_DB_PROMPT !== "false"; // default true
 
 export async function POST(req: NextRequest) {
   try {
@@ -32,7 +41,7 @@ export async function POST(req: NextRequest) {
       [`${monthPrefix}%`]
     );
 
-    // 同时读取前一个月和后一个月的节假日，用于节前节后分析
+    // 同时读取前一个月和后一个月的节假日
     const prevMonth = month === 1 ? 12 : month - 1;
     const prevYear = month === 1 ? year - 1 : year;
     const nextMonth = month === 12 ? 1 : month + 1;
@@ -46,26 +55,18 @@ export async function POST(req: NextRequest) {
       [`${prevMonthPrefix}%`, `${nextMonthPrefix}%`]
     );
 
-    // 读取全年节假日用于提供宏观上下文
     const allYearHolidays = await query<HolidayRow>(
       "SELECT date, name, type, note FROM holiday WHERE date LIKE ? ORDER BY date",
       [`${year}%`]
     );
 
-    const genAI = new GoogleGenerativeAI(apiKey);
-    const model = genAI.getGenerativeModel({
-      model: "gemini-2.5-flash",
-      systemInstruction: "你是一位深耕马来西亚烘焙餐饮行业的资深运营分析师，精通烘焙店（面包、蛋糕、西点、饮品）的营业额波动规律。请严格按照用户要求的 JSON 格式返回分析结果，不要输出任何非 JSON 内容。",
-      generationConfig: {
-        temperature: 0.1,
-        topP: 0.85,
-        responseMimeType: "application/json",
-      },
-    });
+    // 读取事件上下文
+    const events = await query<ContextEventRow>(
+      "SELECT date, event_tag, description FROM context_event WHERE date LIKE ? ORDER BY date",
+      [`${monthPrefix}%`]
+    );
 
-    // 构造该月的天数
     const daysInMonth = new Date(year, month, 0).getDate();
-
     const cityInfo = city ? `，城市：${city}` : "，城市：吉隆坡（Kuala Lumpur）";
 
     const typeLabels: Record<string, string> = {
@@ -76,7 +77,6 @@ export async function POST(req: NextRequest) {
       other: "其他",
     };
 
-    // 构造当月节假日信息
     let holidayInfo = "";
     if (holidays.length > 0) {
       holidayInfo = "\n\n【当月节假日/特殊日期】\n";
@@ -89,7 +89,6 @@ export async function POST(req: NextRequest) {
       holidayInfo = "\n\n当月没有录入节假日信息，请根据你对马来西亚节假日的了解补充判断。\n";
     }
 
-    // 构造相邻月份节假日信息（用于节前节后分析）
     let adjacentInfo = "";
     if (adjacentHolidays.length > 0) {
       adjacentInfo = "\n【相邻月份节假日（用于节前节后影响分析）】\n";
@@ -100,7 +99,6 @@ export async function POST(req: NextRequest) {
       }
     }
 
-    // 构造全年概览
     let yearOverview = "";
     if (allYearHolidays.length > 0) {
       yearOverview = `\n【${year}年全年节假日概览（帮助你理解整体节日分布）】\n`;
@@ -109,7 +107,105 @@ export async function POST(req: NextRequest) {
       }
     }
 
-    const prompt = `请分析 ${year}年${month}月 的每一天（共${daysInMonth}天）${cityInfo}，给出每天的营业额系数。
+    const eventsInfo = events.length > 0
+      ? "\n【当月事件上下文】\n" + events.map((e) => `- ${e.date}：[${e.event_tag}] ${e.description}`).join("\n")
+      : "";
+
+    let systemInstruction: string;
+    let prompt: string;
+    let modelName = "gemini-2.5-flash";
+    let temperature = 0.1;
+    let topP = 0.85;
+
+    if (USE_DB_PROMPT) {
+      try {
+        const vars: Record<string, string> = {
+          year: String(year),
+          month: String(month),
+          monthPadded: String(month).padStart(2, "0"),
+          daysInMonth: String(daysInMonth),
+          cityInfo,
+          holidayInfo,
+          adjacentInfo,
+          yearOverview,
+          eventsInfo,
+        };
+        const built = await buildPrompt("daily_correction", vars);
+        systemInstruction = built.systemInstruction;
+        prompt = `请分析 ${year}年${month}月 的每一天（共${daysInMonth}天）${cityInfo}，给出每天的营业额系数。\n\n${built.prompt}`;
+        modelName = built.model;
+        temperature = built.temperature;
+        topP = built.topP;
+      } catch {
+        // Fallback to hardcoded prompt if DB prompt not available
+        systemInstruction = "你是一位深耕马来西亚烘焙餐饮行业的资深运营分析师，精通烘焙店（面包、蛋糕、西点、饮品）的营业额波动规律。请严格按照用户要求的 JSON 格式返回分析结果，不要输出任何非 JSON 内容。";
+        prompt = buildFallbackDailyCorrectionPrompt(year, month, daysInMonth, cityInfo, yearOverview, holidayInfo, adjacentInfo);
+      }
+    } else {
+      systemInstruction = "你是一位深耕马来西亚烘焙餐饮行业的资深运营分析师，精通烘焙店（面包、蛋糕、西点、饮品）的营业额波动规律。请严格按照用户要求的 JSON 格式返回分析结果，不要输出任何非 JSON 内容。";
+      prompt = buildFallbackDailyCorrectionPrompt(year, month, daysInMonth, cityInfo, yearOverview, holidayInfo, adjacentInfo);
+    }
+
+    const genAI = new GoogleGenerativeAI(apiKey);
+    const model = genAI.getGenerativeModel({
+      model: modelName,
+      systemInstruction,
+      generationConfig: {
+        temperature,
+        topP,
+        responseMimeType: "application/json",
+      },
+    });
+
+    const result = await model.generateContent(prompt);
+    const text = result.response.text();
+
+    let corrections;
+    try {
+      corrections = JSON.parse(text);
+    } catch {
+      return NextResponse.json(
+        { error: "AI 返回格式解析失败", rawText: text },
+        { status: 500 }
+      );
+    }
+
+    if (!Array.isArray(corrections)) {
+      return NextResponse.json(
+        { error: "AI 返回的不是数组格式", rawText: text },
+        { status: 500 }
+      );
+    }
+
+    const holidayMap = new Map(holidays.map((h) => [h.date, h]));
+
+    const normalized = corrections.map((item: { date: string; coefficient: number; reason: string }) => {
+      const dbHoliday = holidayMap.get(item.date);
+      return {
+        date: item.date,
+        coefficient: Number(item.coefficient) || 1.0,
+        reason: dbHoliday
+          ? `${dbHoliday.name} — ${item.reason || "节假日"}`
+          : item.reason || "无说明",
+      };
+    });
+
+    return NextResponse.json({ corrections: normalized });
+  } catch (error) {
+    console.error("AI correction error:", error);
+    return NextResponse.json(
+      { error: `AI 调用失败: ${error instanceof Error ? error.message : String(error)}` },
+      { status: 500 }
+    );
+  }
+}
+
+/** Fallback: 原始硬编码prompt（当DB prompt不可用时） */
+function buildFallbackDailyCorrectionPrompt(
+  year: number, month: number, daysInMonth: number,
+  cityInfo: string, yearOverview: string, holidayInfo: string, adjacentInfo: string
+): string {
+  return `请分析 ${year}年${month}月 的每一天（共${daysInMonth}天）${cityInfo}，给出每天的营业额系数。
 
 ${yearOverview}${holidayInfo}${adjacentInfo}
 
@@ -162,49 +258,4 @@ ${yearOverview}${holidayInfo}${adjacentInfo}
 [{"date": "${year}-${String(month).padStart(2, "0")}-01", "coefficient": 1.0, "reason": "普通工作日"}, ...]
 
 每天一条记录，共 ${daysInMonth} 条。coefficient 保留2位小数。reason 用简短中文说明（需包含具体的影响因素分析，如"母亲节前2天，蛋糕预订高峰"而非笼统的"节日影响"）。`;
-
-    const result = await model.generateContent(prompt);
-    const text = result.response.text();
-
-    // 解析 JSON — responseMimeType 保证返回纯 JSON
-    let corrections;
-    try {
-      corrections = JSON.parse(text);
-    } catch {
-      return NextResponse.json(
-        { error: "AI 返回格式解析失败", rawText: text },
-        { status: 500 }
-      );
-    }
-
-    // 验证并规范化
-    if (!Array.isArray(corrections)) {
-      return NextResponse.json(
-        { error: "AI 返回的不是数组格式", rawText: text },
-        { status: 500 }
-      );
-    }
-
-    // AI 全权判断系数，仅做数据清洗和节日名称补充
-    const holidayMap = new Map(holidays.map((h) => [h.date, h]));
-
-    const normalized = corrections.map((item: { date: string; coefficient: number; reason: string }) => {
-      const dbHoliday = holidayMap.get(item.date);
-      return {
-        date: item.date,
-        coefficient: Number(item.coefficient) || 1.0,
-        reason: dbHoliday
-          ? `${dbHoliday.name} — ${item.reason || "节假日"}`
-          : item.reason || "无说明",
-      };
-    });
-
-    return NextResponse.json({ corrections: normalized });
-  } catch (error) {
-    console.error("AI correction error:", error);
-    return NextResponse.json(
-      { error: `AI 调用失败: ${error instanceof Error ? error.message : String(error)}` },
-      { status: 500 }
-    );
-  }
 }

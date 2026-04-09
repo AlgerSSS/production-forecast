@@ -23,7 +23,26 @@ import {
   addHoliday,
   deleteHoliday,
   getTimeslotSalesRecords,
+  getContextEvents,
+  addContextEvent,
+  deleteContextEvent,
+  getDailyReview,
+  adoptDailyReview,
+  saveOutOfStockRecords,
+  getOutOfStockRecords,
+  getEmpowermentEvents,
+  addEmpowermentEvent,
+  deleteEmpowermentEvent,
+  getPromptSegments,
+  getPromptTemplates,
+  upsertPromptSegment,
+  upsertPromptTemplate,
 } from "@/lib/actions";
+import {
+  parseStockoutLine,
+  calculateLossSlots,
+  calculateStockoutLoss,
+} from "@/lib/engine/forecast-engine";
 import type {
   MonthlyTarget,
   DailyTarget,
@@ -38,18 +57,25 @@ import type {
   Holiday,
   AIProductCorrection,
   TimeslotSalesRecord,
+  ContextEvent,
+  DailyReviewResult,
+  OutOfStockRecord,
+  EmpowermentEvent,
+  PromptSegment,
+  PromptTemplate,
 } from "@/lib/types";
+import dayjs from "dayjs";
 
 // ========== Tab Components ==========
-type TabId = "import" | "monthly" | "daily" | "products" | "timeslots" | "export";
+type TabId = "dashboard" | "forecast" | "review" | "calendar" | "empowerment" | "settings";
 
 const TABS: { id: TabId; label: string }[] = [
-  { id: "import", label: "数据导入" },
-  { id: "monthly", label: "月目标" },
-  { id: "daily", label: "日目标" },
-  { id: "products", label: "单品建议" },
-  { id: "timeslots", label: "分时段" },
-  { id: "export", label: "导出" },
+  { id: "dashboard", label: "今日看板" },
+  { id: "forecast", label: "排产预估" },
+  { id: "review", label: "每日复盘" },
+  { id: "calendar", label: "事件日历" },
+  { id: "empowerment", label: "赋能分析" },
+  { id: "settings", label: "设置" },
 ];
 
 const DAY_TYPE_LABELS: Record<string, string> = {
@@ -61,7 +87,7 @@ const DAY_TYPE_LABELS: Record<string, string> = {
 const DOW_LABELS = ["日", "一", "二", "三", "四", "五", "六"];
 
 export default function Home() {
-  const [activeTab, setActiveTab] = useState<TabId>("import");
+  const [activeTab, setActiveTab] = useState<TabId>("dashboard");
   const [loading, setLoading] = useState(false);
   const [dataLoaded, setDataLoaded] = useState(false);
   const [importStatus, setImportStatus] = useState<{
@@ -70,6 +96,44 @@ export default function Home() {
     strategy?: ImportResult;
     timeslot?: ImportResult;
   }>({});
+
+  // V2: Forecast step flow
+  const [forecastStep, setForecastStep] = useState<"targets" | "products" | "timeslots" | "export">("targets");
+
+  // V2: Toast notification
+  const [toast, setToast] = useState<{ message: string; type: "success" | "error" | "info" } | null>(null);
+  const showToast = useCallback((message: string, type: "success" | "error" | "info" = "info") => {
+    setToast({ message, type });
+    setTimeout(() => setToast(null), 3000);
+  }, []);
+
+  // V2: Dashboard state
+  const [dashboardReview, setDashboardReview] = useState<DailyReviewResult | null>(null);
+  const [dashboardEvents, setDashboardEvents] = useState<ContextEvent[]>([]);
+
+  // V2: Review state
+  const [reviewDate, setReviewDate] = useState(dayjs().format("YYYY-MM-DD"));
+  const [reviewActualRevenue, setReviewActualRevenue] = useState("");
+  const [stockoutText, setStockoutText] = useState("");
+  const [parsedStockouts, setParsedStockouts] = useState<OutOfStockRecord[]>([]);
+  const [reviewResult, setReviewResult] = useState<DailyReviewResult | null>(null);
+  const [reviewLoading, setReviewLoading] = useState(false);
+
+  // V2: Calendar state
+  const [calendarMonth, setCalendarMonth] = useState(dayjs().month());
+  const [calendarYear, setCalendarYear] = useState(dayjs().year());
+  const [calendarEvents, setCalendarEvents] = useState<ContextEvent[]>([]);
+  const [selectedCalendarDate, setSelectedCalendarDate] = useState("");
+  const [newEventTag, setNewEventTag] = useState("");
+  const [newEventType, setNewEventType] = useState<ContextEvent["eventType"]>("other");
+  const [newEventDesc, setNewEventDesc] = useState("");
+
+  // V2: Empowerment state
+  const [empowermentEvents, setEmpowermentEvents] = useState<EmpowermentEvent[]>([]);
+  const [showNewEmpowerment, setShowNewEmpowerment] = useState(false);
+
+  // V2: Settings sub-tab
+  const [settingsTab, setSettingsTab] = useState<"data" | "business" | "schedule" | "alias" | "holiday">("data");
 
   const [year, setYear] = useState(2026);
   const [selectedMonth, setSelectedMonth] = useState(4);
@@ -176,6 +240,20 @@ export default function Home() {
         setTimeout(() => { coefficientsLoadedRef.current = true; }, 0);
 
         setDataLoaded(true);
+
+        // V2: Load dashboard data
+        try {
+          const yesterday = dayjs().subtract(1, "day").format("YYYY-MM-DD");
+          const today = dayjs().format("YYYY-MM-DD");
+          const [review, events] = await Promise.all([
+            getDailyReview(yesterday),
+            getContextEvents(today),
+          ]);
+          if (review) setDashboardReview(review);
+          setDashboardEvents(events);
+        } catch {
+          // Dashboard data is optional
+        }
       } catch (err) {
         console.error("从数据库加载数据失败:", err);
       }
@@ -183,6 +261,20 @@ export default function Home() {
     }
     loadFromDB();
   }, []);
+
+  // V2: Load calendar events when switching to calendar tab or changing month
+  useEffect(() => {
+    if (activeTab !== "calendar") return;
+    const start = `${calendarYear}-${String(calendarMonth + 1).padStart(2, "0")}-01`;
+    const end = dayjs().year(calendarYear).month(calendarMonth).endOf("month").format("YYYY-MM-DD");
+    getContextEvents(undefined, start, end).then(setCalendarEvents).catch(() => {});
+  }, [activeTab, calendarYear, calendarMonth]);
+
+  // V2: Load empowerment events when switching to empowerment tab
+  useEffect(() => {
+    if (activeTab !== "empowerment") return;
+    getEmpowermentEvents().then(setEmpowermentEvents).catch(() => {});
+  }, [activeTab]);
 
   // ========== 从 Excel 重新导入（覆盖DB数据） ==========
   const handleAutoImport = useCallback(async () => {
@@ -1190,94 +1282,832 @@ export default function Home() {
 
       {/* Main Content */}
       <main className="flex-1 max-w-6xl mx-auto px-4 py-6 w-full">
-        {/* ===== IMPORT TAB ===== */}
-        {activeTab === "import" && (
+
+        {/* ===== DASHBOARD TAB ===== */}
+        {activeTab === "dashboard" && (
           <div className="space-y-6 animate-fade-slide-up">
-            {/* Database Data Status */}
-            <div className="bg-white rounded-3xl shadow-[0_4px_40px_rgba(0,0,0,0.03)] p-8">
-              <h2 className="text-lg font-semibold text-[#1F2937] mb-4">数据状态</h2>
-              {dataLoaded ? (
-                <div className="space-y-3">
-                  <div className="bg-green-50/70 rounded-2xl p-4">
-                    <p className="text-green-800 font-medium text-sm">数据已从数据库加载</p>
-                    <div className="mt-2 grid grid-cols-3 gap-4 text-sm text-green-700">
-                      <div>产品: <span className="font-semibold">{products.length}</span> 个</div>
-                      <div>策略: <span className="font-semibold">{strategies.length}</span> 个</div>
-                      <div>基线: <span className="font-semibold">{baselines.length}</span> 个</div>
-                    </div>
-                  </div>
-                </div>
-              ) : loading ? (
-                <div className="bg-[#F7E1E2]/30 rounded-2xl p-4">
-                  <p className="text-[#1F2937] text-sm">正在从数据库加载数据...</p>
-                </div>
-              ) : (
-                <div className="bg-amber-50/70 rounded-2xl p-4">
-                  <p className="text-amber-800 text-sm">数据库暂无数据，请先从 Excel 导入。</p>
-                </div>
-              )}
+            {/* Summary Cards */}
+            <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+              <div className="bg-white rounded-3xl shadow-[0_4px_40px_rgba(0,0,0,0.03)] p-6">
+                <p className="text-xs text-[#9CA3AF] mb-1">昨日营业额</p>
+                <p className="text-xl font-bold text-[#1F2937]">
+                  {dashboardReview ? `RM ${(dashboardReview.review?.stockoutAnalysis?.reduce((s: number, a: { lossAmount: number }) => s + a.lossAmount, 0) || 0).toLocaleString()}` : "—"}
+                </p>
+              </div>
+              <div className="bg-white rounded-3xl shadow-[0_4px_40px_rgba(0,0,0,0.03)] p-6">
+                <p className="text-xs text-[#9CA3AF] mb-1">昨日达成率</p>
+                <p className="text-xl font-bold text-[#1F2937]">{dashboardReview ? dashboardReview.review?.summary?.slice(0, 10) || "—" : "—"}</p>
+              </div>
+              <div className="bg-white rounded-3xl shadow-[0_4px_40px_rgba(0,0,0,0.03)] p-6">
+                <p className="text-xs text-[#9CA3AF] mb-1">今日目标</p>
+                <p className="text-xl font-bold text-[#1F2937]">
+                  {currentDayTarget ? `RM ${currentDayTarget.revenue.toLocaleString()}` : "—"}
+                </p>
+              </div>
+              <div className="bg-white rounded-3xl shadow-[0_4px_40px_rgba(0,0,0,0.03)] p-6">
+                <p className="text-xs text-[#9CA3AF] mb-1">今日出货</p>
+                <p className="text-xl font-bold text-[#1F2937]">
+                  {currentDayTarget ? `RM ${currentDayTarget.shipmentAmount.toLocaleString()}` : "—"}
+                </p>
+              </div>
             </div>
 
-            {/* Excel Re-import */}
-            <div className="bg-white rounded-3xl shadow-[0_4px_40px_rgba(0,0,0,0.03)] p-8">
-              <div className="flex items-center justify-between mb-4">
-                <div>
-                  <h2 className="text-lg font-semibold text-[#1F2937]">从 Excel 重新导入</h2>
-                  <p className="text-sm text-[#9CA3AF] mt-1">
-                    从 data 目录重新导入产品价格、销售数据和策略数据到数据库（将覆盖现有数据）。
-                  </p>
-                </div>
-                <button
-                  onClick={handleAutoImport}
-                  disabled={loading}
-                  className="bg-[#F7E1E2] text-[#1F2937] px-6 py-2.5 rounded-xl hover:bg-[#EBCDCF] hover:scale-[1.03] active:scale-[0.97] disabled:opacity-50 font-medium transition-all duration-200"
-                >
-                  从 Excel 重新导入
-                </button>
-              </div>
-
-              {/* Import Results */}
-              {importStatus.products && (
-                <div className="mt-6 space-y-3">
-                  <ImportResultCard title="产品价格" result={importStatus.products} />
-                  <ImportResultCard title="销售策略" result={importStatus.strategy!} />
-                  <ImportResultCard title="销售数据" result={importStatus.sales!} />
-                  {importStatus.timeslot && (
-                    <ImportResultCard title="分时段销售" result={importStatus.timeslot} />
-                  )}
-                </div>
-              )}
-            </div>
-
-            {/* Rules Management Entry */}
-            <div className="bg-white rounded-3xl shadow-[0_4px_40px_rgba(0,0,0,0.03)] p-8">
-              <div className="flex items-center justify-between mb-4">
-                <h2 className="text-lg font-semibold text-[#1F2937]">规则管理</h2>
-                <button
-                  onClick={() => { setShowRulesPanel(!showRulesPanel); if (!showRulesPanel) loadRulesData(); }}
-                  className="text-sm text-[#1F2937] bg-gray-50 hover:bg-gray-100 px-4 py-1.5 rounded-xl font-medium hover:scale-[1.03] active:scale-[0.97] transition-all duration-200"
-                >
-                  {showRulesPanel ? "收起" : "展开管理"}
-                </button>
-              </div>
-
-              {showRulesPanel && (
-                <div>
-                  {/* Rules Sub-tabs */}
-                  <div className="flex gap-1 mb-6 bg-gray-50 rounded-full p-1 w-fit">
-                    {([["business", "业务规则"], ["schedule", "出货时间表"], ["alias", "产品别名"], ["holiday", "节假日管理"]] as const).map(([id, label]) => (
-                      <button
-                        key={id}
-                        onClick={() => setRulesTab(id)}
-                        className={`px-4 py-1.5 text-sm font-medium rounded-full transition-all duration-300 ${rulesTab === id ? "bg-[#F7E1E2] text-[#1F2937] shadow-sm" : "text-[#9CA3AF] hover:text-[#1F2937]"}`}
-                      >
-                        {label}
-                      </button>
+            {/* AI Review Summary */}
+            {dashboardReview && (
+              <div className="bg-[#F7E1E2]/20 rounded-2xl p-6">
+                <h3 className="text-sm font-semibold text-[#1F2937] mb-3">AI 昨日复盘摘要</h3>
+                <p className="text-sm text-[#4B5563] mb-3">{dashboardReview.review?.summary || "暂无复盘数据"}</p>
+                {dashboardReview.review?.highlights && dashboardReview.review.highlights.length > 0 && (
+                  <div className="flex flex-wrap gap-2 mb-2">
+                    {dashboardReview.review.highlights.map((h: string, i: number) => (
+                      <span key={i} className="text-xs bg-green-50 text-green-700 px-2 py-1 rounded-lg">✓ {h}</span>
                     ))}
                   </div>
+                )}
+                {dashboardReview.review?.painPoints && dashboardReview.review.painPoints.length > 0 && (
+                  <div className="flex flex-wrap gap-2 mb-3">
+                    {dashboardReview.review.painPoints.map((p: string, i: number) => (
+                      <span key={i} className="text-xs bg-red-50 text-red-700 px-2 py-1 rounded-lg">✗ {p}</span>
+                    ))}
+                  </div>
+                )}
+                <div className="flex gap-3">
+                  <button
+                    onClick={() => setActiveTab("review")}
+                    className="text-xs text-[#6B7280] hover:text-[#1F2937] transition-colors"
+                  >
+                    查看完整复盘 →
+                  </button>
+                  {!dashboardReview.adopted && (
+                    <button
+                      onClick={async () => {
+                        const yesterday = dayjs().subtract(1, "day").format("YYYY-MM-DD");
+                        await adoptDailyReview(yesterday);
+                        setDashboardReview({ ...dashboardReview, adopted: true });
+                        showToast("已采纳AI今日策略", "success");
+                      }}
+                      className="text-xs bg-[#F7E1E2] text-[#1F2937] px-3 py-1 rounded-lg font-medium hover:bg-[#F7E1E2]/80 transition-colors"
+                    >
+                      采纳AI今日策略 ✓
+                    </button>
+                  )}
+                </div>
+              </div>
+            )}
 
-                  {/* Business Rules Editor */}
-                  {rulesTab === "business" && (
+            {/* Today Events */}
+            <div className="bg-white rounded-3xl shadow-[0_4px_40px_rgba(0,0,0,0.03)] p-6">
+              <h3 className="text-sm font-semibold text-[#1F2937] mb-3">今日事件提醒</h3>
+              {dashboardEvents.length > 0 ? (
+                <div className="flex flex-wrap gap-2">
+                  {dashboardEvents.map((e, i) => (
+                    <span key={i} className="text-xs bg-blue-50 text-blue-700 px-3 py-1.5 rounded-lg">
+                      {e.eventTag} {e.description && `— ${e.description}`}
+                    </span>
+                  ))}
+                </div>
+              ) : (
+                <p className="text-sm text-[#9CA3AF]">今日暂无事件</p>
+              )}
+              <button
+                onClick={() => { setActiveTab("calendar"); setSelectedCalendarDate(dayjs().format("YYYY-MM-DD")); }}
+                className="mt-3 text-xs text-[#6B7280] hover:text-[#1F2937] transition-colors"
+              >
+                + 添加今日事件
+              </button>
+            </div>
+
+            {/* Quick Actions */}
+            <div className="bg-white rounded-3xl shadow-[0_4px_40px_rgba(0,0,0,0.03)] p-6">
+              <h3 className="text-sm font-semibold text-[#1F2937] mb-3">快捷操作</h3>
+              <div className="flex gap-3">
+                <button
+                  onClick={() => { setActiveTab("forecast"); setForecastStep("targets"); }}
+                  className="px-4 py-2 bg-[#F7E1E2] text-[#1F2937] rounded-xl text-sm font-medium hover:bg-[#F7E1E2]/80 transition-colors"
+                >
+                  生成今日排产单
+                </button>
+                <button
+                  onClick={() => setActiveTab("review")}
+                  className="px-4 py-2 bg-gray-100 text-[#1F2937] rounded-xl text-sm font-medium hover:bg-gray-200 transition-colors"
+                >
+                  录入昨日数据
+                </button>
+                <button
+                  onClick={() => { setActiveTab("forecast"); setForecastStep("export"); }}
+                  className="px-4 py-2 bg-gray-100 text-[#1F2937] rounded-xl text-sm font-medium hover:bg-gray-200 transition-colors"
+                >
+                  导出Excel
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* ===== FORECAST TAB (合并原 monthly + daily + products + timeslots + export) ===== */}
+        {activeTab === "forecast" && (
+          <div className="space-y-6 animate-fade-slide-up">
+            {/* Step Indicator */}
+            <div className="bg-white rounded-3xl shadow-[0_4px_40px_rgba(0,0,0,0.03)] p-4">
+              <div className="flex items-center justify-center gap-2">
+                {(["targets", "products", "timeslots", "export"] as const).map((step, i) => {
+                  const labels = ["月/日目标", "单品建议", "分时段", "导出"];
+                  const isActive = forecastStep === step;
+                  const stepOrder = ["targets", "products", "timeslots", "export"];
+                  const isDone = stepOrder.indexOf(forecastStep) > i;
+                  return (
+                    <div key={step} className="flex items-center">
+                      {i > 0 && <div className={`w-8 h-0.5 mx-1 ${isDone ? "bg-[#F7E1E2]" : "bg-gray-200"}`} />}
+                      <button
+                        onClick={() => setForecastStep(step)}
+                        className={`px-4 py-2 text-sm font-medium rounded-full transition-all duration-300 ${
+                          isActive ? "bg-[#F7E1E2] text-[#1F2937] shadow-sm" :
+                          isDone ? "bg-[#F7E1E2]/50 text-[#1F2937]" :
+                          "text-[#9CA3AF] hover:text-[#1F2937] hover:bg-gray-50"
+                        }`}
+                      >
+                        {isDone ? "✓ " : `${i + 1}. `}{labels[i]}
+                      </button>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+
+            {/* Step 1: Monthly + Daily Targets */}
+            {forecastStep === "targets" && (
+              <>
+                {/* 月度系数配置 */}
+                <div className="bg-white rounded-3xl shadow-[0_4px_40px_rgba(0,0,0,0.03)] p-8">
+                  <div className="flex items-center justify-between mb-4">
+                    <div className="flex items-center gap-2">
+                      <h2 className="text-lg font-semibold text-[#1F2937]">月度系数配置</h2>
+                      {editingCoefficients && (
+                        <span className="text-xs text-[#9CA3AF]">修改后自动保存</span>
+                      )}
+                    </div>
+                    <button
+                      onClick={() => setEditingCoefficients(!editingCoefficients)}
+                      className="text-sm text-[#1F2937] bg-gray-50 hover:bg-gray-100 px-4 py-1.5 rounded-xl font-medium hover:scale-[1.03] active:scale-[0.97] transition-all duration-200"
+                    >
+                      {editingCoefficients ? "收起编辑" : "修改系数"}
+                    </button>
+                  </div>
+                  {editingCoefficients && (
+                    <div className="grid grid-cols-6 gap-3 mb-4">
+                      {Array.from({ length: 12 }, (_, i) => {
+                        const key = String(i + 1);
+                        return (
+                          <div key={key} className="flex flex-col">
+                            <label className="text-xs text-[#9CA3AF] mb-1">{i + 1}月</label>
+                            <input
+                              type="number"
+                              step="0.01"
+                              min="0"
+                              value={monthlyCoefficients[key] ?? 1}
+                              onChange={(e) =>
+                                setMonthlyCoefficients((prev) => ({
+                                  ...prev,
+                                  [key]: Number(e.target.value) || 0,
+                                }))
+                              }
+                              className="border-0 bg-gray-50 rounded-xl px-2 py-1.5 text-sm text-center w-full focus:ring-2 focus:ring-[#F7E1E2] focus:outline-none transition-all duration-200"
+                            />
+                          </div>
+                        );
+                      })}
+                    </div>
+                  )}
+                  {!editingCoefficients && (
+                    <div className="flex gap-2 flex-wrap text-xs text-[#9CA3AF]">
+                      {Array.from({ length: 12 }, (_, i) => (
+                        <span key={i} className="bg-[#F7E1E2]/30 px-2.5 py-1 rounded-full">
+                          {i + 1}月: {monthlyCoefficients[String(i + 1)]}
+                        </span>
+                      ))}
+                    </div>
+                  )}
+                </div>
+
+                {/* 月营业额目标 */}
+                <div className="bg-white rounded-3xl shadow-[0_4px_40px_rgba(0,0,0,0.03)] p-8">
+                  <div className="flex items-center justify-between mb-4">
+                    <h2 className="text-lg font-semibold text-[#1F2937]">月营业额目标 ({year}年)</h2>
+                    <button
+                      onClick={handleGenerateMonthly}
+                      disabled={loading}
+                      className="bg-[#F7E1E2] text-[#1F2937] px-6 py-2.5 rounded-xl hover:bg-[#EBCDCF] hover:scale-[1.03] active:scale-[0.97] disabled:opacity-50 text-sm font-medium transition-all duration-200"
+                    >
+                      计算月目标
+                    </button>
+                  </div>
+                  {monthlyTargets.length > 0 && (
+                    <div className="overflow-x-auto rounded-xl">
+                      <table className="min-w-full text-sm">
+                        <thead className="bg-gray-50/50">
+                          <tr>
+                            <th className="px-3 py-2 text-left text-[#9CA3AF] font-medium text-xs">月份</th>
+                            <th className="px-3 py-2 text-right text-[#9CA3AF] font-medium text-xs">系数</th>
+                            <th className="px-3 py-2 text-right text-[#9CA3AF] font-medium text-xs">基础营业额</th>
+                            <th className="px-3 py-2 text-right text-[#9CA3AF] font-medium text-xs">含赋能营业额</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {monthlyTargets.map((t) => (
+                            <tr
+                              key={t.month}
+                              className={`hover:bg-[#F7E1E2]/20 cursor-pointer transition-colors duration-200 border-b border-gray-50 ${
+                                t.month === selectedMonth ? "bg-[#F7E1E2]/30" : ""
+                              }`}
+                              onClick={() => setSelectedMonth(t.month)}
+                            >
+                              <td className="px-3 py-2 font-medium">{t.month}月</td>
+                              <td className="px-3 py-2 text-right">{t.coefficient}</td>
+                              <td className="px-3 py-2 text-right">{t.baseRevenue.toLocaleString()}</td>
+                              <td className="px-3 py-2 text-right font-semibold text-[#1F2937]">{t.enhancedRevenue.toLocaleString()}</td>
+                            </tr>
+                          ))}
+                        </tbody>
+                        <tfoot className="bg-[#F7E1E2]/20 font-semibold">
+                          <tr>
+                            <td className="px-3 py-2">合计</td>
+                            <td className="px-3 py-2 text-right">-</td>
+                            <td className="px-3 py-2 text-right">{monthlyTargets.reduce((s, t) => s + t.baseRevenue, 0).toLocaleString()}</td>
+                            <td className="px-3 py-2 text-right text-[#1F2937]">{monthlyTargets.reduce((s, t) => s + t.enhancedRevenue, 0).toLocaleString()}</td>
+                          </tr>
+                        </tfoot>
+                      </table>
+                    </div>
+                  )}
+                </div>
+
+                {/* 日营业额目标 */}
+                <div className="bg-white rounded-3xl shadow-[0_4px_40px_rgba(0,0,0,0.03)] p-8">
+                  <div className="flex items-center justify-between mb-4">
+                    <h2 className="text-lg font-semibold text-[#1F2937]">{selectedMonth}月 日营业额目标</h2>
+                    <div className="flex gap-2">
+                      <button onClick={handleFetchAICorrection} disabled={aiLoading || dailyTargets.length === 0} className="bg-gray-50 text-[#1F2937] px-4 py-2.5 rounded-xl hover:bg-gray-100 hover:scale-[1.03] active:scale-[0.97] disabled:opacity-50 text-sm font-medium transition-all duration-200">
+                        {aiLoading ? "AI分析中..." : "获取AI修正建议"}
+                      </button>
+                      {aiCorrections.length > 0 && (
+                        <button onClick={handleAdoptAllAI} className="bg-gray-50 text-[#1F2937] px-4 py-2.5 rounded-xl hover:bg-gray-100 hover:scale-[1.03] active:scale-[0.97] text-sm font-medium transition-all duration-200">
+                          一键采用全部AI建议
+                        </button>
+                      )}
+                      <button onClick={handleGenerateDaily} disabled={loading} className="bg-[#F7E1E2] text-[#1F2937] px-6 py-2.5 rounded-xl hover:bg-[#EBCDCF] hover:scale-[1.03] active:scale-[0.97] disabled:opacity-50 text-sm font-medium transition-all duration-200">
+                        计算日目标
+                      </button>
+                    </div>
+                  </div>
+                  {aiError && <div className="mb-4 p-3 rounded-2xl bg-red-50/70 text-red-700 text-sm">{aiError}</div>}
+                  {dailyTargets.length > 0 && (
+                    <>
+                      <div className="grid grid-cols-4 gap-4 mb-6">
+                        <SummaryCard label="月总营业额" value={dailyTargets.reduce((s, d) => s + d.revenue, 0).toLocaleString()} />
+                        <SummaryCard label="月总出货金额" value={dailyTargets.reduce((s, d) => s + d.shipmentAmount, 0).toLocaleString()} />
+                        <SummaryCard label="工作日均" value={Math.round(dailyTargets.filter((d) => d.dayType === "mondayToThursday").reduce((s, d) => s + d.revenue, 0) / (dailyTargets.filter((d) => d.dayType === "mondayToThursday").length || 1)).toLocaleString()} />
+                        <SummaryCard label="周末日均" value={Math.round(dailyTargets.filter((d) => d.dayType === "weekend").reduce((s, d) => s + d.revenue, 0) / (dailyTargets.filter((d) => d.dayType === "weekend").length || 1)).toLocaleString()} />
+                      </div>
+                      <div className="overflow-x-auto rounded-xl">
+                        <table className="min-w-full text-sm">
+                          <thead className="bg-gray-50/50">
+                            <tr>
+                              <th className="px-3 py-2 text-left text-[#9CA3AF] font-medium text-xs">日期</th>
+                              <th className="px-3 py-2 text-center text-[#9CA3AF] font-medium text-xs">星期</th>
+                              <th className="px-3 py-2 text-center text-[#9CA3AF] font-medium text-xs">类型</th>
+                              <th className="px-3 py-2 text-right text-[#9CA3AF] font-medium text-xs">原权重</th>
+                              <th className="px-3 py-2 text-right text-[#9CA3AF] font-medium text-xs">营业额</th>
+                              <th className="px-3 py-2 text-right text-[#9CA3AF] font-medium text-xs">出货金额</th>
+                              {aiCorrections.length > 0 && (
+                                <>
+                                  <th className="px-3 py-2 text-right bg-[#F7E1E2]/20 text-[#9CA3AF] font-medium text-xs">AI系数</th>
+                                  <th className="px-3 py-2 text-right bg-[#F7E1E2]/20 text-[#9CA3AF] font-medium text-xs">AI营业额</th>
+                                  <th className="px-3 py-2 text-left bg-[#F7E1E2]/20 text-[#9CA3AF] font-medium text-xs">AI理由</th>
+                                  <th className="px-3 py-2 text-center bg-[#F7E1E2]/20 text-[#9CA3AF] font-medium text-xs">操作</th>
+                                </>
+                              )}
+                              <th className="px-3 py-2 text-center text-[#9CA3AF] font-medium text-xs">查看</th>
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {dailyTargets.map((d) => {
+                              const aiC = aiCorrections.find((c) => c.date === d.date);
+                              return (
+                                <tr key={d.date} className={`hover:bg-[#F7E1E2]/20 transition-colors duration-200 border-b border-gray-50 ${d.date === selectedDate ? "bg-[#F7E1E2]/30" : ""} ${d.dayType === "weekend" ? "bg-orange-50/30" : d.dayType === "friday" ? "bg-yellow-50/30" : ""}`}>
+                                  <td className="px-3 py-2 font-medium">{d.date}</td>
+                                  <td className="px-3 py-2 text-center">周{DOW_LABELS[d.dayOfWeek]}</td>
+                                  <td className="px-3 py-2 text-center">
+                                    <span className={`px-2 py-0.5 rounded-full text-xs ${d.dayType === "weekend" ? "bg-orange-100 text-orange-700" : d.dayType === "friday" ? "bg-yellow-100 text-yellow-700" : "bg-gray-100 text-gray-700"}`}>
+                                      {DAY_TYPE_LABELS[d.dayType]}
+                                    </span>
+                                  </td>
+                                  <td className="px-3 py-2 text-right">{d.weight}</td>
+                                  <td className="px-3 py-2 text-right">{d.revenue.toLocaleString()}</td>
+                                  <td className="px-3 py-2 text-right font-semibold">{d.shipmentAmount.toLocaleString()}</td>
+                                  {aiCorrections.length > 0 && (
+                                    <>
+                                      <td className={`px-3 py-2 text-right bg-[#F7E1E2]/10 ${aiC && aiC.aiCoefficient !== d.weight ? "font-bold text-[#d4727a]" : ""}`}>{aiC ? aiC.aiCoefficient : "-"}</td>
+                                      <td className="px-3 py-2 text-right bg-[#F7E1E2]/10">{aiC ? aiC.aiRevenue.toLocaleString() : "-"}</td>
+                                      <td className="px-3 py-2 text-left bg-[#F7E1E2]/10 text-xs max-w-[200px] truncate" title={aiC?.reason}>{aiC?.reason || "-"}</td>
+                                      <td className="px-3 py-2 text-center bg-[#F7E1E2]/10">
+                                        {aiC && !aiC.adopted ? (
+                                          <button onClick={() => handleAdoptAI(d.date)} className="text-[#d4727a] hover:text-[#1F2937] text-xs font-medium transition-colors duration-200">采用</button>
+                                        ) : aiC?.adopted ? (
+                                          <span className="text-green-600 text-xs">已采用</span>
+                                        ) : null}
+                                      </td>
+                                    </>
+                                  )}
+                                  <td className="px-3 py-2 text-center">
+                                    <button onClick={() => { setSelectedDate(d.date); setForecastStep("products"); }} className="text-[#d4727a] hover:text-[#1F2937] text-xs transition-colors duration-200">查看单品</button>
+                                  </td>
+                                </tr>
+                              );
+                            })}
+                          </tbody>
+                        </table>
+                      </div>
+                    </>
+                  )}
+                </div>
+
+                {/* Step Navigation */}
+                <div className="flex justify-end">
+                  <button onClick={() => setForecastStep("products")} className="bg-[#F7E1E2] text-[#1F2937] px-6 py-2.5 rounded-xl hover:bg-[#EBCDCF] text-sm font-medium transition-all duration-200">
+                    下一步：单品建议 →
+                  </button>
+                </div>
+              </>
+            )}
+
+            {/* Step 2: Product Suggestions */}
+            {forecastStep === "products" && (
+              <>
+                <div className="bg-white rounded-3xl shadow-[0_4px_40px_rgba(0,0,0,0.03)] p-8">
+                  <div className="flex items-center justify-between mb-4">
+                    <div>
+                      <h2 className="text-lg font-semibold text-[#1F2937]">单品出货建议</h2>
+                      <p className="text-sm text-[#9CA3AF] mt-1">日期：{selectedDate || "请先选择日期"} | 目标出货金额：{currentDayTarget?.shipmentAmount?.toLocaleString() || "-"}</p>
+                    </div>
+                    <div className="flex gap-2">
+                      <select value={selectedDate} onChange={(e) => setSelectedDate(e.target.value)} className="border-0 bg-gray-50 rounded-xl px-3 py-2 text-sm focus:ring-2 focus:ring-[#F7E1E2] focus:outline-none transition-all duration-200">
+                        <option value="">选择日期</option>
+                        {dailyTargets.map((d) => (<option key={d.date} value={d.date}>{d.date} (周{DOW_LABELS[d.dayOfWeek]})</option>))}
+                      </select>
+                      <button onClick={handleFetchAIProductCorrection} disabled={aiProductCorrectionLoading || productSuggestions.length === 0} className="bg-gray-50 text-[#1F2937] px-4 py-2.5 rounded-xl hover:bg-gray-100 hover:scale-[1.03] active:scale-[0.97] disabled:opacity-50 text-sm font-medium transition-all duration-200">
+                        {aiProductCorrectionLoading ? "AI 分析中..." : "AI 智能校正"}
+                      </button>
+                      <button onClick={handleGenerateProducts} disabled={loading || !selectedDate} className="bg-[#F7E1E2] text-[#1F2937] px-6 py-2.5 rounded-xl hover:bg-[#EBCDCF] hover:scale-[1.03] active:scale-[0.97] disabled:opacity-50 text-sm font-medium transition-all duration-200">
+                        生成建议
+                      </button>
+                    </div>
+                  </div>
+                  {productSuggestions.length > 0 && (
+                    <div className={`mb-4 p-3 rounded-2xl text-sm ${Math.abs(amountDiff) < 1000 ? "bg-green-50/70 text-green-800" : Math.abs(amountDiff) < 5000 ? "bg-amber-50/70 text-amber-800" : "bg-red-50/70 text-red-800"}`}>
+                      <span className="font-medium">金额偏差：</span>建议总金额 {totalSuggestedAmount.toLocaleString()} | 目标 {currentDayTarget?.shipmentAmount?.toLocaleString()} | 偏差 {amountDiff > 0 ? "+" : ""}{amountDiff.toLocaleString()} ({currentDayTarget?.shipmentAmount ? ((amountDiff / currentDayTarget.shipmentAmount) * 100).toFixed(1) : 0}%)
+                    </div>
+                  )}
+                  {aiProductCorrectionError && <div className="mb-4 p-3 bg-red-50/70 text-red-700 rounded-2xl text-sm">{aiProductCorrectionError}</div>}
+                  {aiProductAnalysis && !aiProductCorrectionAdopted && (
+                    <div className="mb-4 p-4 bg-[#F7E1E2]/30 rounded-2xl">
+                      <div className="flex items-center justify-between mb-2">
+                        <span className="text-sm font-medium text-[#1F2937]">AI 校正分析</span>
+                        <button onClick={handleAdoptAIProductCorrection} className="bg-[#F7E1E2] text-[#1F2937] px-4 py-1.5 rounded-xl text-sm hover:bg-[#EBCDCF] hover:scale-[1.03] active:scale-[0.97] font-medium transition-all duration-200">采纳 AI 建议</button>
+                      </div>
+                      <p className="text-sm text-[#1F2937]/70">{aiProductAnalysis}</p>
+                    </div>
+                  )}
+                  {aiProductCorrectionAdopted && <div className="mb-4 p-3 bg-green-50/70 text-green-700 rounded-2xl text-sm">已采纳 AI 单品校正建议</div>}
+                  {productSuggestions.length > 0 && (
+                    <div className="overflow-x-auto rounded-xl">
+                      <table className="min-w-full text-sm">
+                        <thead className="bg-gray-50/50">
+                          <tr>
+                            <th className="px-3 py-2 text-left text-[#9CA3AF] font-medium text-xs">品名</th>
+                            <th className="px-3 py-2 text-center text-[#9CA3AF] font-medium text-xs">定位</th>
+                            <th className="px-3 py-2 text-center text-[#9CA3AF] font-medium text-xs">冷/热</th>
+                            <th className="px-3 py-2 text-right text-[#9CA3AF] font-medium text-xs">单价</th>
+                            <th className="px-3 py-2 text-right text-[#9CA3AF] font-medium text-xs">倍数</th>
+                            <th className="px-3 py-2 text-right text-[#9CA3AF] font-medium text-xs">历史基线</th>
+                            <th className="px-3 py-2 text-right text-[#9CA3AF] font-medium text-xs">建议数量</th>
+                            {aiProductCorrections.length > 0 && !aiProductCorrectionAdopted && <th className="px-3 py-2 text-right text-[#9CA3AF] font-medium text-xs">AI建议</th>}
+                            {aiProductCorrections.length > 0 && !aiProductCorrectionAdopted && <th className="px-3 py-2 text-left text-[#9CA3AF] font-medium text-xs">AI理由</th>}
+                            <th className="px-3 py-2 text-right text-[#9CA3AF] font-medium text-xs">调整数量</th>
+                            <th className="px-3 py-2 text-right text-[#9CA3AF] font-medium text-xs">金额</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {productSuggestions.map((s) => (
+                            <tr key={s.productName} className={`hover:bg-[#F7E1E2]/20 transition-colors duration-200 border-b border-gray-50 ${s.positioning === "TOP" ? "bg-red-50/20" : s.positioning === "潜在TOP" ? "bg-amber-50/20" : ""}`}>
+                              <td className="px-3 py-2 font-medium">{s.productName}</td>
+                              <td className="px-3 py-2 text-center"><span className={`px-2 py-0.5 rounded-full text-xs ${s.positioning === "TOP" ? "bg-red-100 text-red-700" : s.positioning === "潜在TOP" ? "bg-amber-100 text-amber-700" : "bg-gray-100 text-gray-700"}`}>{s.positioning}</span></td>
+                              <td className="px-3 py-2 text-center"><span className={`px-2 py-0.5 rounded-full text-xs ${s.coldHot === "热" ? "bg-red-100 text-red-600" : "bg-blue-100 text-blue-600"}`}>{s.coldHot}</span></td>
+                              <td className="px-3 py-2 text-right">{s.price}</td>
+                              <td className="px-3 py-2 text-right">{s.packMultiple}</td>
+                              <td className="px-3 py-2 text-right">{s.baselineQuantity}</td>
+                              <td className="px-3 py-2 text-right">{s.roundedQuantity}</td>
+                              {aiProductCorrections.length > 0 && !aiProductCorrectionAdopted && (() => {
+                                const c = aiProductCorrections.find((x) => x.productName === s.productName);
+                                return (<><td className="px-3 py-2 text-right font-medium text-[#d4727a]">{c ? c.suggestedQuantity : "-"}</td><td className="px-3 py-2 text-left text-xs text-[#1F2937]/60 max-w-[200px] truncate">{c ? c.reason : "-"}</td></>);
+                              })()}
+                              <td className="px-3 py-2 text-right">
+                                <input type="number" value={adjustedQuantities[s.productName] ?? s.adjustedQuantity ?? s.roundedQuantity} onChange={(e) => handleQuantityChange(s.productName, Number(e.target.value))} className="w-20 border-0 bg-gray-50 rounded-xl px-2 py-1 text-right text-sm focus:ring-2 focus:ring-[#F7E1E2] focus:outline-none transition-all duration-200" min={0} step={s.packMultiple} />
+                              </td>
+                              <td className="px-3 py-2 text-right font-semibold">{s.totalAmount.toLocaleString()}</td>
+                            </tr>
+                          ))}
+                        </tbody>
+                        <tfoot className="bg-[#F7E1E2]/20 font-semibold">
+                          <tr>
+                            <td className="px-3 py-2" colSpan={aiProductCorrections.length > 0 && !aiProductCorrectionAdopted ? 10 : 8}>合计</td>
+                            <td className="px-3 py-2 text-right">{totalSuggestedAmount.toLocaleString()}</td>
+                          </tr>
+                        </tfoot>
+                      </table>
+                    </div>
+                  )}
+                </div>
+                <div className="flex justify-between">
+                  <button onClick={() => setForecastStep("targets")} className="text-[#9CA3AF] hover:text-[#1F2937] px-4 py-2.5 text-sm font-medium transition-colors">← 月/日目标</button>
+                  <button onClick={() => setForecastStep("timeslots")} className="bg-[#F7E1E2] text-[#1F2937] px-6 py-2.5 rounded-xl hover:bg-[#EBCDCF] text-sm font-medium transition-all duration-200">下一步：分时段 →</button>
+                </div>
+              </>
+            )}
+
+            {/* Step 3: Time Slots */}
+            {forecastStep === "timeslots" && (
+              <>
+                <div className="bg-white rounded-3xl shadow-[0_4px_40px_rgba(0,0,0,0.03)] p-8">
+                  <div className="flex items-center justify-between mb-4">
+                    <h2 className="text-lg font-semibold text-[#1F2937]">分时段出货建议 - {selectedDate}</h2>
+                    <div className="flex gap-2">
+                      <button onClick={handleFetchAITimeSlot} disabled={aiTimeSlotLoading || productSuggestions.length === 0} className="bg-[#F7E1E2] text-[#1F2937] px-6 py-2.5 rounded-xl hover:bg-[#EBCDCF] hover:scale-[1.03] active:scale-[0.97] disabled:opacity-50 text-sm font-medium transition-all duration-200">
+                        {aiTimeSlotLoading ? "AI 分析中..." : "AI 智能分配"}
+                      </button>
+                      <button onClick={handleGenerateTimeSlots} disabled={loading || productSuggestions.length === 0} className="bg-gray-50 text-[#1F2937] px-4 py-2.5 rounded-xl hover:bg-gray-100 hover:scale-[1.03] active:scale-[0.97] disabled:opacity-50 text-sm font-medium transition-all duration-200">
+                        规则生成
+                      </button>
+                    </div>
+                  </div>
+                  {aiTimeSlotError && <div className="mb-4 p-3 bg-red-50/70 text-red-700 rounded-2xl text-sm">{aiTimeSlotError}</div>}
+                  {aiTimeSlotAnalysis && !aiTimeSlotAdopted && (
+                    <div className="mb-4 p-4 bg-[#F7E1E2]/30 rounded-2xl">
+                      <div className="flex items-center justify-between mb-2">
+                        <span className="text-sm font-medium text-[#1F2937]">AI 分析结果</span>
+                        <button onClick={handleAdoptAITimeSlot} className="bg-[#F7E1E2] text-[#1F2937] px-4 py-1.5 rounded-xl text-sm hover:bg-[#EBCDCF] hover:scale-[1.03] active:scale-[0.97] font-medium transition-all duration-200">采纳 AI 建议</button>
+                      </div>
+                      <p className="text-sm text-[#1F2937]/70">{aiTimeSlotAnalysis}</p>
+                    </div>
+                  )}
+                  {aiTimeSlotAdopted && <div className="mb-4 p-3 bg-green-50/70 text-green-700 rounded-2xl text-sm">已采纳 AI 分时段建议</div>}
+                  {timeSlotSuggestions.length > 0 && (
+                    <div className="overflow-x-auto rounded-xl">
+                      <TimeSlotTable suggestions={timeSlotSuggestions} productSuggestions={productSuggestions} fixedSchedule={fixedSchedule} timeslotSalesRecords={timeslotSalesRecords} />
+                    </div>
+                  )}
+                </div>
+                <div className="flex justify-between">
+                  <button onClick={() => setForecastStep("products")} className="text-[#9CA3AF] hover:text-[#1F2937] px-4 py-2.5 text-sm font-medium transition-colors">← 单品建议</button>
+                  <button onClick={() => setForecastStep("export")} className="bg-[#F7E1E2] text-[#1F2937] px-6 py-2.5 rounded-xl hover:bg-[#EBCDCF] text-sm font-medium transition-all duration-200">下一步：导出 →</button>
+                </div>
+              </>
+            )}
+
+            {/* Step 4: Export */}
+            {forecastStep === "export" && (
+              <>
+                <div className="bg-white rounded-3xl shadow-[0_4px_40px_rgba(0,0,0,0.03)] p-8">
+                  <h2 className="text-lg font-semibold text-[#1F2937] mb-4">导出 Excel</h2>
+                  <p className="text-sm text-[#9CA3AF] mb-4">导出当前月度目标、日目标、单品建议和分时段数据。</p>
+                  <button onClick={handleExport} disabled={monthlyTargets.length === 0 && dailyTargets.length === 0} className="bg-[#F7E1E2] text-[#1F2937] px-6 py-2.5 rounded-xl hover:bg-[#EBCDCF] hover:scale-[1.03] active:scale-[0.97] disabled:opacity-50 font-medium transition-all duration-200">
+                    导出 Excel 文件
+                  </button>
+                </div>
+                <div className="flex justify-start">
+                  <button onClick={() => setForecastStep("timeslots")} className="text-[#9CA3AF] hover:text-[#1F2937] px-4 py-2.5 text-sm font-medium transition-colors">← 分时段</button>
+                </div>
+              </>
+            )}
+          </div>
+        )}
+        {/* ===== REVIEW TAB ===== */}
+        {activeTab === "review" && (
+          <div className="space-y-6 animate-fade-slide-up">
+            <div className="bg-white rounded-3xl shadow-[0_4px_40px_rgba(0,0,0,0.03)] p-8">
+              <h2 className="text-lg font-semibold text-[#1F2937] mb-4">每日复盘</h2>
+              <div className="grid grid-cols-2 gap-4 mb-4">
+                <div>
+                  <label className="text-sm font-medium text-[#1F2937]">复盘日期</label>
+                  <input type="date" value={reviewDate} onChange={(e) => setReviewDate(e.target.value)} className="mt-1 w-full border-0 bg-gray-50 rounded-xl px-3 py-2 text-sm focus:ring-2 focus:ring-[#F7E1E2] focus:outline-none transition-all duration-200" />
+                </div>
+                <div>
+                  <label className="text-sm font-medium text-[#1F2937]">实际营业额 (RM)</label>
+                  <input type="number" value={reviewActualRevenue} onChange={(e) => setReviewActualRevenue(e.target.value)} placeholder="如 58000" className="mt-1 w-full border-0 bg-gray-50 rounded-xl px-3 py-2 text-sm focus:ring-2 focus:ring-[#F7E1E2] focus:outline-none transition-all duration-200" />
+                </div>
+              </div>
+              <div className="mb-4">
+                <label className="text-sm font-medium text-[#1F2937]">断货记录（每行一个：产品名 时间）</label>
+                <textarea value={stockoutText} onChange={(e) => {
+                  setStockoutText(e.target.value);
+                  const lines = e.target.value.split("\n").filter(Boolean);
+                  const parsed = lines.map((line) => {
+                    const result = parseStockoutLine(line);
+                    if (!result) return null;
+                    const lossSlots = calculateLossSlots(result.soldoutTime);
+                    const soldoutSlot = `${result.soldoutTime.split(":")[0]}:00`;
+                    return { productName: result.inputName, inputName: result.inputName, soldoutTime: result.soldoutTime, soldoutSlot, date: reviewDate, lossSlots, dayType: "mondayToThursday" as OutOfStockRecord["dayType"], estimatedLossQty: 0, estimatedLossAmount: 0 } satisfies OutOfStockRecord;
+                  }).filter((x): x is OutOfStockRecord => x !== null);
+                  setParsedStockouts(parsed);
+                }} placeholder={"奶油泡芙 3点\n巧克力蛋糕 下午2点\n抹茶卷 14:00"} rows={5} className="mt-1 w-full border-0 bg-gray-50 rounded-xl px-3 py-2 text-sm focus:ring-2 focus:ring-[#F7E1E2] focus:outline-none transition-all duration-200 font-mono" />
+              </div>
+              {parsedStockouts.length > 0 && (
+                <div className="mb-4 p-3 bg-[#F7E1E2]/20 rounded-2xl">
+                  <p className="text-xs font-medium text-[#1F2937] mb-2">解析预览：</p>
+                  <div className="flex flex-wrap gap-2">
+                    {parsedStockouts.map((s, i) => (
+                      <span key={i} className="text-xs bg-white px-2 py-1 rounded-lg shadow-sm">
+                        {s.productName} {s.soldoutTime} → 损失时段: {s.lossSlots.join(", ") || "无"}
+                      </span>
+                    ))}
+                  </div>
+                </div>
+              )}
+              <button onClick={async () => {
+                setReviewLoading(true);
+                try {
+                  if (parsedStockouts.length > 0) await saveOutOfStockRecords(parsedStockouts.map((s) => ({ ...s, date: reviewDate })));
+                  const res = await fetch("/api/daily-review", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ feedData: { date: reviewDate, actualRevenue: Number(reviewActualRevenue) || 0, stockoutRecords: parsedStockouts } }) });
+                  const data = await res.json();
+                  if (res.ok) { setReviewResult(data); showToast("AI 复盘完成", "success"); }
+                  else showToast(data.error || "复盘失败", "error");
+                } catch (err) { showToast(String(err), "error"); }
+                finally { setReviewLoading(false); }
+              }} disabled={reviewLoading} className="bg-[#F7E1E2] text-[#1F2937] px-6 py-2.5 rounded-xl hover:bg-[#EBCDCF] hover:scale-[1.03] active:scale-[0.97] disabled:opacity-50 font-medium transition-all duration-200">
+                {reviewLoading ? "AI 分析中..." : "提交复盘"}
+              </button>
+            </div>
+            {reviewResult && (
+              <div className="bg-white rounded-3xl shadow-[0_4px_40px_rgba(0,0,0,0.03)] p-8">
+                <h3 className="text-md font-semibold text-[#1F2937] mb-3">AI 复盘结果</h3>
+                <p className="text-sm text-[#4B5563] mb-3">{reviewResult.review?.summary || ""}</p>
+                {reviewResult.review?.highlights && reviewResult.review.highlights.length > 0 && (
+                  <div className="flex flex-wrap gap-2 mb-3">
+                    {reviewResult.review.highlights.map((h: string, i: number) => (<span key={i} className="text-xs bg-green-50 text-green-700 px-2 py-1 rounded-lg">✓ {h}</span>))}
+                  </div>
+                )}
+                {reviewResult.review?.painPoints && reviewResult.review.painPoints.length > 0 && (
+                  <div className="flex flex-wrap gap-2 mb-3">
+                    {reviewResult.review.painPoints.map((p: string, i: number) => (<span key={i} className="text-xs bg-red-50 text-red-700 px-2 py-1 rounded-lg">✗ {p}</span>))}
+                  </div>
+                )}
+                {reviewResult.tomorrowSuggestions && (
+                  <div className="mt-4 p-4 bg-blue-50/50 rounded-2xl">
+                    <p className="text-sm font-medium text-blue-800 mb-2">明日建议</p>
+                    <p className="text-sm text-blue-700">{reviewResult.tomorrowSuggestions.reason}</p>
+                  </div>
+                )}
+                {!reviewResult.adopted && (
+                  <button onClick={async () => { await adoptDailyReview(reviewDate); setReviewResult({ ...reviewResult, adopted: true }); showToast("已采纳复盘建议", "success"); }} className="mt-4 bg-[#F7E1E2] text-[#1F2937] px-4 py-2 rounded-xl text-sm font-medium hover:bg-[#EBCDCF] transition-all duration-200">采纳建议</button>
+                )}
+                {reviewResult.adopted && <p className="mt-4 text-sm text-green-600 font-medium">已采纳</p>}
+              </div>
+            )}
+          </div>
+        )}
+        {/* ===== CALENDAR TAB ===== */}
+        {activeTab === "calendar" && (
+          <div className="space-y-6 animate-fade-slide-up">
+            <div className="bg-white rounded-3xl shadow-[0_4px_40px_rgba(0,0,0,0.03)] p-8">
+              <div className="flex items-center justify-between mb-4">
+                <h2 className="text-lg font-semibold text-[#1F2937]">事件日历 {calendarYear}年{calendarMonth + 1}月</h2>
+                <div className="flex gap-2">
+                  <button onClick={() => { const d = dayjs().year(calendarYear).month(calendarMonth).subtract(1, "month"); setCalendarYear(d.year()); setCalendarMonth(d.month()); }} className="text-sm text-[#9CA3AF] hover:text-[#1F2937] px-3 py-1.5 rounded-xl hover:bg-gray-50 transition-all">← 上月</button>
+                  <button onClick={() => { const d = dayjs().year(calendarYear).month(calendarMonth).add(1, "month"); setCalendarYear(d.year()); setCalendarMonth(d.month()); }} className="text-sm text-[#9CA3AF] hover:text-[#1F2937] px-3 py-1.5 rounded-xl hover:bg-gray-50 transition-all">下月 →</button>
+                </div>
+              </div>
+              <div className="grid grid-cols-7 gap-1 mb-4">
+                {["日", "一", "二", "三", "四", "五", "六"].map((d) => (
+                  <div key={d} className="text-center text-xs text-[#9CA3AF] py-2 font-medium">{d}</div>
+                ))}
+                {(() => {
+                  const firstDay = dayjs().year(calendarYear).month(calendarMonth).startOf("month");
+                  const daysInMonth = firstDay.daysInMonth();
+                  const startDow = firstDay.day();
+                  const cells = [];
+                  for (let i = 0; i < startDow; i++) cells.push(<div key={`empty-${i}`} />);
+                  for (let d = 1; d <= daysInMonth; d++) {
+                    const dateStr = firstDay.date(d).format("YYYY-MM-DD");
+                    const dayEvents = calendarEvents.filter((e) => e.date === dateStr);
+                    const isSelected = selectedCalendarDate === dateStr;
+                    const isToday = dateStr === dayjs().format("YYYY-MM-DD");
+                    cells.push(
+                      <button key={d} onClick={() => setSelectedCalendarDate(dateStr)} className={`p-2 rounded-xl text-sm min-h-[60px] flex flex-col items-center transition-all duration-200 ${isSelected ? "bg-[#F7E1E2] shadow-sm" : isToday ? "bg-[#F7E1E2]/30" : "hover:bg-gray-50"}`}>
+                        <span className={`font-medium ${isSelected ? "text-[#1F2937]" : "text-[#4B5563]"}`}>{d}</span>
+                        {dayEvents.length > 0 && <div className="flex gap-0.5 mt-1 flex-wrap justify-center">{dayEvents.slice(0, 2).map((ev, i) => (<span key={i} className="w-1.5 h-1.5 rounded-full bg-[#d4727a]" />))}</div>}
+                      </button>
+                    );
+                  }
+                  return cells;
+                })()}
+              </div>
+            </div>
+            {selectedCalendarDate && (
+              <div className="bg-white rounded-3xl shadow-[0_4px_40px_rgba(0,0,0,0.03)] p-8">
+                <h3 className="text-md font-semibold text-[#1F2937] mb-3">{selectedCalendarDate} 事件</h3>
+                {calendarEvents.filter((e) => e.date === selectedCalendarDate).length > 0 ? (
+                  <div className="space-y-2 mb-4">
+                    {calendarEvents.filter((e) => e.date === selectedCalendarDate).map((e, i) => (
+                      <div key={i} className="flex items-center justify-between p-3 bg-gray-50 rounded-xl">
+                        <div>
+                          <span className="text-sm font-medium text-[#1F2937]">{e.eventTag}</span>
+                          {e.description && <span className="text-xs text-[#9CA3AF] ml-2">{e.description}</span>}
+                          <span className={`ml-2 text-xs px-2 py-0.5 rounded-full ${e.eventType === "promotion" ? "bg-[#F7E1E2] text-[#1F2937]" : e.eventType === "competition" ? "bg-red-100 text-red-700" : "bg-gray-100 text-gray-700"}`}>{e.eventType}</span>
+                        </div>
+                        <button onClick={async () => { if (e.id) { await deleteContextEvent(e.id); setCalendarEvents((prev) => prev.filter((x) => x.id !== e.id)); showToast("已删除", "info"); } }} className="text-red-400 text-xs hover:text-red-600 transition-colors">删除</button>
+                      </div>
+                    ))}
+                  </div>
+                ) : (<p className="text-sm text-[#9CA3AF] mb-4">该日暂无事件</p>)}
+                <div className="flex gap-2 items-end">
+                  <div className="flex-1">
+                    <label className="text-xs text-[#9CA3AF]">事件标签</label>
+                    <input value={newEventTag} onChange={(e) => setNewEventTag(e.target.value)} className="w-full border-0 bg-gray-50 rounded-xl px-3 py-1.5 text-sm focus:ring-2 focus:ring-[#F7E1E2] focus:outline-none transition-all duration-200" placeholder="如: 开斋节" />
+                  </div>
+                  <div>
+                    <label className="text-xs text-[#9CA3AF]">类型</label>
+                    <select value={newEventType} onChange={(e) => setNewEventType(e.target.value as ContextEvent["eventType"])} className="border-0 bg-gray-50 rounded-xl px-3 py-1.5 text-sm focus:ring-2 focus:ring-[#F7E1E2] focus:outline-none transition-all duration-200">
+                      <option value="internal">内部活动</option>
+                      <option value="promotion">促销</option>
+                      <option value="weather">天气</option>
+                      <option value="competition">竞品</option>
+                      <option value="other">其他</option>
+                    </select>
+                  </div>
+                  <div className="flex-1">
+                    <label className="text-xs text-[#9CA3AF]">描述</label>
+                    <input value={newEventDesc} onChange={(e) => setNewEventDesc(e.target.value)} className="w-full border-0 bg-gray-50 rounded-xl px-3 py-1.5 text-sm focus:ring-2 focus:ring-[#F7E1E2] focus:outline-none transition-all duration-200" placeholder="可选" />
+                  </div>
+                  <button onClick={async () => {
+                    if (!newEventTag) return;
+                    await addContextEvent({ date: selectedCalendarDate, eventTag: newEventTag, eventType: newEventType, description: newEventDesc, impactProducts: "", createdBy: "user" });
+                    const events = await getContextEvents(undefined, `${calendarYear}-${String(calendarMonth + 1).padStart(2, "0")}-01`, dayjs().year(calendarYear).month(calendarMonth).endOf("month").format("YYYY-MM-DD"));
+                    setCalendarEvents(events);
+                    setNewEventTag(""); setNewEventDesc("");
+                    showToast("事件已添加", "success");
+                  }} className="bg-[#F7E1E2] text-[#1F2937] px-4 py-1.5 rounded-xl text-sm hover:bg-[#EBCDCF] font-medium transition-all duration-200">添加</button>
+                </div>
+              </div>
+            )}
+          </div>
+        )}
+        {/* ===== EMPOWERMENT TAB ===== */}
+        {activeTab === "empowerment" && (
+          <div className="space-y-6 animate-fade-slide-up">
+            <div className="bg-white rounded-3xl shadow-[0_4px_40px_rgba(0,0,0,0.03)] p-8">
+              <div className="flex items-center justify-between mb-4">
+                <h2 className="text-lg font-semibold text-[#1F2937]">赋能分析</h2>
+                <button onClick={() => setShowNewEmpowerment(!showNewEmpowerment)} className="bg-[#F7E1E2] text-[#1F2937] px-4 py-2 rounded-xl text-sm font-medium hover:bg-[#EBCDCF] transition-all duration-200">
+                  {showNewEmpowerment ? "取消" : "+ 新增赋能事件"}
+                </button>
+              </div>
+              {showNewEmpowerment && (
+                <div className="mb-6 p-4 bg-gray-50 rounded-2xl space-y-3">
+                  <div className="grid grid-cols-3 gap-3">
+                    <div><label className="text-xs text-[#9CA3AF]">事件名称</label><input id="emp-name" className="w-full border-0 bg-white rounded-xl px-3 py-1.5 text-sm focus:ring-2 focus:ring-[#F7E1E2] focus:outline-none" placeholder="如: 新品上市推广" /></div>
+                    <div><label className="text-xs text-[#9CA3AF]">开始日期</label><input id="emp-start" type="date" className="w-full border-0 bg-white rounded-xl px-3 py-1.5 text-sm focus:ring-2 focus:ring-[#F7E1E2] focus:outline-none" /></div>
+                    <div><label className="text-xs text-[#9CA3AF]">结束日期</label><input id="emp-end" type="date" className="w-full border-0 bg-white rounded-xl px-3 py-1.5 text-sm focus:ring-2 focus:ring-[#F7E1E2] focus:outline-none" /></div>
+                  </div>
+                  <div className="grid grid-cols-2 gap-3">
+                    <div><label className="text-xs text-[#9CA3AF]">类型</label><select id="emp-type" className="w-full border-0 bg-white rounded-xl px-3 py-1.5 text-sm focus:ring-2 focus:ring-[#F7E1E2] focus:outline-none"><option value="market">市场赋能</option><option value="operation">运营赋能</option></select></div>
+                    <div><label className="text-xs text-[#9CA3AF]">投入成本 (RM)</label><input id="emp-cost" type="number" className="w-full border-0 bg-white rounded-xl px-3 py-1.5 text-sm focus:ring-2 focus:ring-[#F7E1E2] focus:outline-none" placeholder="0" /></div>
+                  </div>
+                  <button onClick={async () => {
+                    const name = (document.getElementById("emp-name") as HTMLInputElement)?.value;
+                    const startDate = (document.getElementById("emp-start") as HTMLInputElement)?.value;
+                    const endDate = (document.getElementById("emp-end") as HTMLInputElement)?.value;
+                    const eventType = (document.getElementById("emp-type") as HTMLSelectElement)?.value as "market" | "operation";
+                    const cost = Number((document.getElementById("emp-cost") as HTMLInputElement)?.value) || 0;
+                    if (!name || !startDate || !endDate) { showToast("请填写完整信息", "error"); return; }
+                    await addEmpowermentEvent({ eventName: name, startDate, endDate, eventType, cost, targetProducts: "", platform: "", exposureCount: 0, clickCount: 0, operationType: "", operationDetail: "" });
+                    const events = await getEmpowermentEvents();
+                    setEmpowermentEvents(events);
+                    setShowNewEmpowerment(false);
+                    showToast("赋能事件已添加", "success");
+                  }} className="bg-[#F7E1E2] text-[#1F2937] px-4 py-2 rounded-xl text-sm font-medium hover:bg-[#EBCDCF] transition-all duration-200">保存</button>
+                </div>
+              )}
+              {empowermentEvents.length === 0 ? (
+                <p className="text-sm text-[#9CA3AF]">暂无赋能事件，点击上方按钮添加</p>
+              ) : (
+                <div className="space-y-4">
+                  {empowermentEvents.map((ev) => (
+                    <div key={ev.id} className="p-4 bg-gray-50 rounded-2xl">
+                      <div className="flex items-center justify-between mb-2">
+                        <div>
+                          <span className="text-sm font-semibold text-[#1F2937]">{ev.eventName}</span>
+                          <span className="ml-2 text-xs px-2 py-0.5 rounded-full bg-[#F7E1E2] text-[#1F2937]">{ev.eventType}</span>
+                        </div>
+                        <div className="flex gap-2">
+                          <button onClick={async () => {
+                            const res = await fetch("/api/empowerment-review", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ eventId: ev.id }) });
+                            if (res.ok) { const events = await getEmpowermentEvents(); setEmpowermentEvents(events); showToast("ROI 分析完成", "success"); } else showToast("分析失败", "error");
+                          }} className="text-xs text-[#d4727a] hover:text-[#1F2937] font-medium transition-colors">AI 分析 ROI</button>
+                          <button onClick={async () => { if (ev.id) { await deleteEmpowermentEvent(ev.id); setEmpowermentEvents((prev) => prev.filter((x) => x.id !== ev.id)); showToast("已删除", "info"); } }} className="text-xs text-red-400 hover:text-red-600 transition-colors">删除</button>
+                        </div>
+                      </div>
+                      <p className="text-xs text-[#9CA3AF]">{ev.startDate} ~ {ev.endDate} | 投入: RM {ev.cost?.toLocaleString() || 0}</p>
+                      {ev.reviewJson && (
+                        <div className="mt-3 p-3 bg-white rounded-xl text-xs text-[#4B5563]">
+                          <p className="font-medium text-[#1F2937] mb-1">ROI 分析结果</p>
+                          <p>{typeof ev.reviewJson === "string" ? ev.reviewJson : JSON.stringify(ev.reviewJson, null, 2)}</p>
+                        </div>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          </div>
+        )}
+        {/* ===== SETTINGS TAB ===== */}
+        {activeTab === "settings" && (
+          <div className="space-y-6 animate-fade-slide-up">
+            <div className="bg-white rounded-3xl shadow-[0_4px_40px_rgba(0,0,0,0.03)] p-4">
+              <div className="flex gap-1 bg-gray-50 rounded-full p-1 w-fit mx-auto">
+                {([["data", "数据导入"], ["business", "业务规则"], ["schedule", "出货时间表"], ["alias", "产品别名"], ["holiday", "节假日"]] as const).map(([id, label]) => (
+                  <button key={id} onClick={() => { setSettingsTab(id); if (id !== "data") loadRulesData(); }} className={`px-4 py-1.5 text-sm font-medium rounded-full transition-all duration-300 ${settingsTab === id ? "bg-[#F7E1E2] text-[#1F2937] shadow-sm" : "text-[#9CA3AF] hover:text-[#1F2937]"}`}>{label}</button>
+                ))}
+              </div>
+            </div>
+
+            {settingsTab === "data" && (
+              <>
+                <div className="bg-white rounded-3xl shadow-[0_4px_40px_rgba(0,0,0,0.03)] p-8">
+                  <h2 className="text-lg font-semibold text-[#1F2937] mb-4">数据库状态</h2>
+                  {dataLoaded ? (
+                    <div className="bg-green-50/70 rounded-2xl p-4">
+                      <p className="text-green-800 font-medium text-sm">数据已从数据库加载</p>
+                      <div className="mt-2 grid grid-cols-3 gap-4 text-sm text-green-700">
+                        <div>产品: <span className="font-semibold">{products.length}</span> 个</div>
+                        <div>策略: <span className="font-semibold">{strategies.length}</span> 个</div>
+                        <div>基线: <span className="font-semibold">{baselines.length}</span> 个</div>
+                      </div>
+                    </div>
+                  ) : loading ? (
+                    <div className="bg-[#F7E1E2]/30 rounded-2xl p-4"><p className="text-[#1F2937] text-sm">正在从数据库加载数据...</p></div>
+                  ) : (
+                    <div className="bg-amber-50/70 rounded-2xl p-4"><p className="text-amber-800 text-sm">数据库暂无数据，请先从 Excel 导入。</p></div>
+                  )}
+                </div>
+                <div className="bg-white rounded-3xl shadow-[0_4px_40px_rgba(0,0,0,0.03)] p-8">
+                  <div className="flex items-center justify-between mb-4">
+                    <div>
+                      <h2 className="text-lg font-semibold text-[#1F2937]">从 Excel 重新导入</h2>
+                      <p className="text-sm text-[#9CA3AF] mt-1">从 data 目录重新导入产品价格、销售数据和策略数据到数据库（将覆盖现有数据）。</p>
+                    </div>
+                    <button onClick={handleAutoImport} disabled={loading} className="bg-[#F7E1E2] text-[#1F2937] px-6 py-2.5 rounded-xl hover:bg-[#EBCDCF] hover:scale-[1.03] active:scale-[0.97] disabled:opacity-50 font-medium transition-all duration-200">从 Excel 重新导入</button>
+                  </div>
+                  {importStatus.products && (
+                    <div className="mt-6 space-y-3">
+                      <ImportResultCard title="产品价格" result={importStatus.products} />
+                      <ImportResultCard title="销售策略" result={importStatus.strategy!} />
+                      <ImportResultCard title="销售数据" result={importStatus.sales!} />
+                      {importStatus.timeslot && <ImportResultCard title="分时段销售" result={importStatus.timeslot} />}
+                    </div>
+                  )}
+                </div>
+                {products.length > 0 && (
+                  <div className="bg-white rounded-3xl shadow-[0_4px_40px_rgba(0,0,0,0.03)] p-8">
+                    <h3 className="text-md font-semibold text-[#1F2937] mb-3">已导入产品 ({products.length} 个)</h3>
+                    <div className="overflow-x-auto rounded-xl">
+                      <table className="min-w-full text-sm">
+                        <thead className="bg-gray-50/50">
+                          <tr>
+                            <th className="px-3 py-2 text-left text-[#9CA3AF] font-medium text-xs">品类</th>
+                            <th className="px-3 py-2 text-left text-[#9CA3AF] font-medium text-xs">品名</th>
+                            <th className="px-3 py-2 text-right text-[#9CA3AF] font-medium text-xs">单价</th>
+                            <th className="px-3 py-2 text-right text-[#9CA3AF] font-medium text-xs">倍数</th>
+                            <th className="px-3 py-2 text-center text-[#9CA3AF] font-medium text-xs">类型</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {products.map((p) => (
+                            <tr key={p.id} className="hover:bg-[#F7E1E2]/20 transition-colors duration-200 border-b border-gray-50">
+                              <td className="px-3 py-2">{p.category}</td>
+                              <td className="px-3 py-2 font-medium">{p.name}</td>
+                              <td className="px-3 py-2 text-right">{p.price}</td>
+                              <td className="px-3 py-2 text-right">{p.packMultiple}</td>
+                              <td className="px-3 py-2 text-center"><span className={`px-2 py-0.5 rounded-full text-xs ${p.unitType === "batch" ? "bg-[#F7E1E2] text-[#1F2937]" : "bg-green-100 text-green-700"}`}>{p.unitType === "batch" ? "整批" : "按个"}</span></td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  </div>
+                )}
+              </>
+            )}
+                  {settingsTab === "business" && (
                     <div className="space-y-4">
                       <div className="grid grid-cols-2 gap-4">
                         <div>
@@ -1383,7 +2213,7 @@ export default function Home() {
                   )}
 
                   {/* Fixed Shipment Schedule Editor */}
-                  {rulesTab === "schedule" && (
+                  {settingsTab === "schedule" && (
                     <div className="space-y-3">
                       <div className="flex gap-2 items-end">
                         <div className="flex-1">
@@ -1443,7 +2273,7 @@ export default function Home() {
                   )}
 
                   {/* Product Alias Editor */}
-                  {rulesTab === "alias" && (
+                  {settingsTab === "alias" && (
                     <div className="space-y-3">
                       <div className="flex gap-2 items-end">
                         <div className="flex-1">
@@ -1503,7 +2333,7 @@ export default function Home() {
                   )}
 
                   {/* Holiday Management */}
-                  {rulesTab === "holiday" && (
+                  {settingsTab === "holiday" && (
                     <div className="space-y-3">
                       <div className="bg-[#F7E1E2]/30 rounded-2xl p-3 text-xs text-[#1F2937] mb-3">
                         在这里录入节假日信息，AI 修正时会根据节日类型、节前节后影响等因素自动判断营业额系数。
@@ -1620,670 +2450,20 @@ export default function Home() {
                       {rulesSaving && <p className="text-sm text-[#d4727a] font-medium">保存中...</p>}
                     </div>
                   )}
-                </div>
-              )}
-            </div>
 
-            {/* Products Preview */}
-            {products.length > 0 && (
-              <div className="bg-white rounded-3xl shadow-[0_4px_40px_rgba(0,0,0,0.03)] p-8">
-                <h3 className="text-md font-semibold text-[#1F2937] mb-3">
-                  已导入产品 ({products.length} 个)
-                </h3>
-                <div className="overflow-x-auto rounded-xl">
-                  <table className="min-w-full text-sm">
-                    <thead className="bg-gray-50/50">
-                      <tr>
-                        <th className="px-3 py-2 text-left text-[#9CA3AF] font-medium text-xs">品类</th>
-                        <th className="px-3 py-2 text-left text-[#9CA3AF] font-medium text-xs">品名</th>
-                        <th className="px-3 py-2 text-right text-[#9CA3AF] font-medium text-xs">单价</th>
-                        <th className="px-3 py-2 text-right text-[#9CA3AF] font-medium text-xs">倍数</th>
-                        <th className="px-3 py-2 text-center text-[#9CA3AF] font-medium text-xs">类型</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {products.map((p) => (
-                        <tr key={p.id} className="hover:bg-[#F7E1E2]/20 transition-colors duration-200 border-b border-gray-50">
-                          <td className="px-3 py-2">{p.category}</td>
-                          <td className="px-3 py-2 font-medium">{p.name}</td>
-                          <td className="px-3 py-2 text-right">{p.price}</td>
-                          <td className="px-3 py-2 text-right">{p.packMultiple}</td>
-                          <td className="px-3 py-2 text-center">
-                            <span
-                              className={`px-2 py-0.5 rounded-full text-xs ${
-                                p.unitType === "batch"
-                                  ? "bg-[#F7E1E2] text-[#1F2937]"
-                                  : "bg-green-100 text-green-700"
-                              }`}
-                            >
-                              {p.unitType === "batch" ? "整批" : "按个"}
-                            </span>
-                          </td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
-              </div>
-            )}
           </div>
         )}
 
-        {/* ===== MONTHLY TARGET TAB ===== */}
-        {activeTab === "monthly" && (
-          <div className="space-y-6 animate-fade-slide-up">
-            {/* Coefficient Editing Panel */}
-            <div className="bg-white rounded-3xl shadow-[0_4px_40px_rgba(0,0,0,0.03)] p-8">
-              <div className="flex items-center justify-between mb-4">
-                <div className="flex items-center gap-2">
-                  <h2 className="text-lg font-semibold text-[#1F2937]">月度系数配置</h2>
-                  {editingCoefficients && (
-                    <span className="text-xs text-[#9CA3AF]">修改后自动保存</span>
-                  )}
-                </div>
-                <button
-                  onClick={() => setEditingCoefficients(!editingCoefficients)}
-                  className="text-sm text-[#1F2937] bg-gray-50 hover:bg-gray-100 px-4 py-1.5 rounded-xl font-medium hover:scale-[1.03] active:scale-[0.97] transition-all duration-200"
-                >
-                  {editingCoefficients ? "收起编辑" : "修改系数"}
-                </button>
-              </div>
-              {editingCoefficients && (
-                <div className="grid grid-cols-6 gap-3 mb-4">
-                  {Array.from({ length: 12 }, (_, i) => {
-                    const key = String(i + 1);
-                    return (
-                      <div key={key} className="flex flex-col">
-                        <label className="text-xs text-[#9CA3AF] mb-1">{i + 1}月</label>
-                        <input
-                          type="number"
-                          step="0.01"
-                          min="0"
-                          value={monthlyCoefficients[key] ?? 1}
-                          onChange={(e) =>
-                            setMonthlyCoefficients((prev) => ({
-                              ...prev,
-                              [key]: Number(e.target.value) || 0,
-                            }))
-                          }
-                          className="border-0 bg-gray-50 rounded-xl px-2 py-1.5 text-sm text-center w-full focus:ring-2 focus:ring-[#F7E1E2] focus:outline-none transition-all duration-200"
-                        />
-                      </div>
-                    );
-                  })}
-                </div>
-              )}
-              {!editingCoefficients && (
-                <div className="flex gap-2 flex-wrap text-xs text-[#9CA3AF]">
-                  {Array.from({ length: 12 }, (_, i) => (
-                    <span key={i} className="bg-[#F7E1E2]/30 px-2.5 py-1 rounded-full">
-                      {i + 1}月: {monthlyCoefficients[String(i + 1)]}
-                    </span>
-                  ))}
-                </div>
-              )}
-            </div>
-
-            <div className="bg-white rounded-3xl shadow-[0_4px_40px_rgba(0,0,0,0.03)] p-8">
-              <div className="flex items-center justify-between mb-4">
-                <h2 className="text-lg font-semibold text-[#1F2937]">月营业额目标 ({year}年)</h2>
-                <button
-                  onClick={handleGenerateMonthly}
-                  disabled={loading}
-                  className="bg-[#F7E1E2] text-[#1F2937] px-6 py-2.5 rounded-xl hover:bg-[#EBCDCF] hover:scale-[1.03] active:scale-[0.97] disabled:opacity-50 text-sm font-medium transition-all duration-200"
-                >
-                  计算月目标
-                </button>
-              </div>
-
-              {monthlyTargets.length > 0 && (
-                <div className="overflow-x-auto rounded-xl">
-                  <table className="min-w-full text-sm">
-                    <thead className="bg-gray-50/50">
-                      <tr>
-                        <th className="px-3 py-2 text-left text-[#9CA3AF] font-medium text-xs">月份</th>
-                        <th className="px-3 py-2 text-right text-[#9CA3AF] font-medium text-xs">系数</th>
-                        <th className="px-3 py-2 text-right text-[#9CA3AF] font-medium text-xs">基础营业额</th>
-                        <th className="px-3 py-2 text-right text-[#9CA3AF] font-medium text-xs">含赋能营业额</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {monthlyTargets.map((t) => (
-                        <tr
-                          key={t.month}
-                          className={`hover:bg-[#F7E1E2]/20 cursor-pointer transition-colors duration-200 border-b border-gray-50 ${
-                            t.month === selectedMonth ? "bg-[#F7E1E2]/30" : ""
-                          }`}
-                          onClick={() => setSelectedMonth(t.month)}
-                        >
-                          <td className="px-3 py-2 font-medium">{t.month}月</td>
-                          <td className="px-3 py-2 text-right">{t.coefficient}</td>
-                          <td className="px-3 py-2 text-right">
-                            {t.baseRevenue.toLocaleString()}
-                          </td>
-                          <td className="px-3 py-2 text-right font-semibold text-[#1F2937]">
-                            {t.enhancedRevenue.toLocaleString()}
-                          </td>
-                        </tr>
-                      ))}
-                    </tbody>
-                    <tfoot className="bg-[#F7E1E2]/20 font-semibold">
-                      <tr>
-                        <td className="px-3 py-2">合计</td>
-                        <td className="px-3 py-2 text-right">-</td>
-                        <td className="px-3 py-2 text-right">
-                          {monthlyTargets
-                            .reduce((s, t) => s + t.baseRevenue, 0)
-                            .toLocaleString()}
-                        </td>
-                        <td className="px-3 py-2 text-right text-[#1F2937]">
-                          {monthlyTargets
-                            .reduce((s, t) => s + t.enhancedRevenue, 0)
-                            .toLocaleString()}
-                        </td>
-                      </tr>
-                    </tfoot>
-                  </table>
-                </div>
-              )}
-            </div>
-          </div>
-        )}
-
-        {/* ===== DAILY TARGET TAB ===== */}
-        {activeTab === "daily" && (
-          <div className="space-y-6 animate-fade-slide-up">
-            <div className="bg-white rounded-3xl shadow-[0_4px_40px_rgba(0,0,0,0.03)] p-8">
-              <div className="flex items-center justify-between mb-4">
-                <h2 className="text-lg font-semibold text-[#1F2937]">
-                  {selectedMonth}月 日营业额目标
-                </h2>
-                <div className="flex gap-2">
-                  <button
-                    onClick={handleFetchAICorrection}
-                    disabled={aiLoading || dailyTargets.length === 0}
-                    className="bg-gray-50 text-[#1F2937] px-4 py-2.5 rounded-xl hover:bg-gray-100 hover:scale-[1.03] active:scale-[0.97] disabled:opacity-50 text-sm font-medium transition-all duration-200"
-                  >
-                    {aiLoading ? "AI分析中..." : "获取AI修正建议"}
-                  </button>
-                  {aiCorrections.length > 0 && (
-                    <button
-                      onClick={handleAdoptAllAI}
-                      className="bg-gray-50 text-[#1F2937] px-4 py-2.5 rounded-xl hover:bg-gray-100 hover:scale-[1.03] active:scale-[0.97] text-sm font-medium transition-all duration-200"
-                    >
-                      一键采用全部AI建议
-                    </button>
-                  )}
-                  <button
-                    onClick={handleGenerateDaily}
-                    disabled={loading}
-                    className="bg-[#F7E1E2] text-[#1F2937] px-6 py-2.5 rounded-xl hover:bg-[#EBCDCF] hover:scale-[1.03] active:scale-[0.97] disabled:opacity-50 text-sm font-medium transition-all duration-200"
-                  >
-                    计算日目标
-                  </button>
-                </div>
-              </div>
-
-              {aiError && (
-                <div className="mb-4 p-3 rounded-2xl bg-red-50/70 text-red-700 text-sm">
-                  {aiError}
-                </div>
-              )}
-
-              {dailyTargets.length > 0 && (
-                <>
-                  {/* Summary Cards */}
-                  <div className="grid grid-cols-4 gap-4 mb-6">
-                    <SummaryCard
-                      label="月总营业额"
-                      value={dailyTargets
-                        .reduce((s, d) => s + d.revenue, 0)
-                        .toLocaleString()}
-                    />
-                    <SummaryCard
-                      label="月总出货金额"
-                      value={dailyTargets
-                        .reduce((s, d) => s + d.shipmentAmount, 0)
-                        .toLocaleString()}
-                    />
-                    <SummaryCard
-                      label="工作日均"
-                      value={Math.round(
-                        dailyTargets
-                          .filter((d) => d.dayType === "mondayToThursday")
-                          .reduce((s, d) => s + d.revenue, 0) /
-                          (dailyTargets.filter(
-                            (d) => d.dayType === "mondayToThursday"
-                          ).length || 1)
-                      ).toLocaleString()}
-                    />
-                    <SummaryCard
-                      label="周末日均"
-                      value={Math.round(
-                        dailyTargets
-                          .filter((d) => d.dayType === "weekend")
-                          .reduce((s, d) => s + d.revenue, 0) /
-                          (dailyTargets.filter(
-                            (d) => d.dayType === "weekend"
-                          ).length || 1)
-                      ).toLocaleString()}
-                    />
-                  </div>
-
-                  <div className="overflow-x-auto rounded-xl">
-                    <table className="min-w-full text-sm">
-                      <thead className="bg-gray-50/50">
-                        <tr>
-                          <th className="px-3 py-2 text-left text-[#9CA3AF] font-medium text-xs">日期</th>
-                          <th className="px-3 py-2 text-center text-[#9CA3AF] font-medium text-xs">星期</th>
-                          <th className="px-3 py-2 text-center text-[#9CA3AF] font-medium text-xs">类型</th>
-                          <th className="px-3 py-2 text-right text-[#9CA3AF] font-medium text-xs">原权重</th>
-                          <th className="px-3 py-2 text-right text-[#9CA3AF] font-medium text-xs">营业额</th>
-                          <th className="px-3 py-2 text-right text-[#9CA3AF] font-medium text-xs">出货金额</th>
-                          {aiCorrections.length > 0 && (
-                            <>
-                              <th className="px-3 py-2 text-right bg-[#F7E1E2]/20 text-[#9CA3AF] font-medium text-xs">AI系数</th>
-                              <th className="px-3 py-2 text-right bg-[#F7E1E2]/20 text-[#9CA3AF] font-medium text-xs">AI营业额</th>
-                              <th className="px-3 py-2 text-left bg-[#F7E1E2]/20 text-[#9CA3AF] font-medium text-xs">AI理由</th>
-                              <th className="px-3 py-2 text-center bg-[#F7E1E2]/20 text-[#9CA3AF] font-medium text-xs">操作</th>
-                            </>
-                          )}
-                          <th className="px-3 py-2 text-center text-[#9CA3AF] font-medium text-xs">查看</th>
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {dailyTargets.map((d) => {
-                          const aiC = aiCorrections.find((c) => c.date === d.date);
-                          return (
-                            <tr
-                              key={d.date}
-                              className={`hover:bg-[#F7E1E2]/20 transition-colors duration-200 border-b border-gray-50 ${
-                                d.date === selectedDate ? "bg-[#F7E1E2]/30" : ""
-                              } ${
-                                d.dayType === "weekend"
-                                  ? "bg-orange-50/30"
-                                  : d.dayType === "friday"
-                                  ? "bg-yellow-50/30"
-                                  : ""
-                              }`}
-                            >
-                              <td className="px-3 py-2 font-medium">{d.date}</td>
-                              <td className="px-3 py-2 text-center">
-                                周{DOW_LABELS[d.dayOfWeek]}
-                              </td>
-                              <td className="px-3 py-2 text-center">
-                                <span
-                                  className={`px-2 py-0.5 rounded-full text-xs ${
-                                    d.dayType === "weekend"
-                                      ? "bg-orange-100 text-orange-700"
-                                      : d.dayType === "friday"
-                                      ? "bg-yellow-100 text-yellow-700"
-                                      : "bg-gray-100 text-gray-700"
-                                  }`}
-                                >
-                                  {DAY_TYPE_LABELS[d.dayType]}
-                                </span>
-                              </td>
-                              <td className="px-3 py-2 text-right">{d.weight}</td>
-                              <td className="px-3 py-2 text-right">
-                                {d.revenue.toLocaleString()}
-                              </td>
-                              <td className="px-3 py-2 text-right font-semibold">
-                                {d.shipmentAmount.toLocaleString()}
-                              </td>
-                              {aiCorrections.length > 0 && (
-                                <>
-                                  <td className={`px-3 py-2 text-right bg-[#F7E1E2]/10 ${aiC && aiC.aiCoefficient !== d.weight ? "font-bold text-[#d4727a]" : ""}`}>
-                                    {aiC ? aiC.aiCoefficient : "-"}
-                                  </td>
-                                  <td className="px-3 py-2 text-right bg-[#F7E1E2]/10">
-                                    {aiC ? aiC.aiRevenue.toLocaleString() : "-"}
-                                  </td>
-                                  <td className="px-3 py-2 text-left bg-[#F7E1E2]/10 text-xs max-w-[200px] truncate" title={aiC?.reason}>
-                                    {aiC?.reason || "-"}
-                                  </td>
-                                  <td className="px-3 py-2 text-center bg-[#F7E1E2]/10">
-                                    {aiC && !aiC.adopted ? (
-                                      <button
-                                        onClick={() => handleAdoptAI(d.date)}
-                                        className="text-[#d4727a] hover:text-[#1F2937] text-xs font-medium transition-colors duration-200"
-                                      >
-                                        采用
-                                      </button>
-                                    ) : aiC?.adopted ? (
-                                      <span className="text-green-600 text-xs">已采用</span>
-                                    ) : null}
-                                  </td>
-                                </>
-                              )}
-                              <td className="px-3 py-2 text-center">
-                                <button
-                                  onClick={() => {
-                                    setSelectedDate(d.date);
-                                    setActiveTab("products");
-                                  }}
-                                  className="text-[#d4727a] hover:text-[#1F2937] text-xs transition-colors duration-200"
-                                >
-                                  查看单品
-                                </button>
-                              </td>
-                            </tr>
-                          );
-                        })}
-                      </tbody>
-                    </table>
-                  </div>
-                </>
-              )}
-            </div>
-          </div>
-        )}
-
-        {/* ===== PRODUCT SUGGESTIONS TAB ===== */}
-        {activeTab === "products" && (
-          <div className="space-y-6 animate-fade-slide-up">
-            <div className="bg-white rounded-3xl shadow-[0_4px_40px_rgba(0,0,0,0.03)] p-8">
-              <div className="flex items-center justify-between mb-4">
-                <div>
-                  <h2 className="text-lg font-semibold text-[#1F2937]">
-                    单品出货建议
-                  </h2>
-                  <p className="text-sm text-[#9CA3AF] mt-1">
-                    日期：{selectedDate || "请先选择日期"} |
-                    目标出货金额：
-                    {currentDayTarget?.shipmentAmount?.toLocaleString() || "-"}
-                  </p>
-                </div>
-                <div className="flex gap-2">
-                  <select
-                    value={selectedDate}
-                    onChange={(e) => setSelectedDate(e.target.value)}
-                    className="border-0 bg-gray-50 rounded-xl px-3 py-2 text-sm focus:ring-2 focus:ring-[#F7E1E2] focus:outline-none transition-all duration-200"
-                  >
-                    <option value="">选择日期</option>
-                    {dailyTargets.map((d) => (
-                      <option key={d.date} value={d.date}>
-                        {d.date} (周{DOW_LABELS[d.dayOfWeek]})
-                      </option>
-                    ))}
-                  </select>
-                  <button
-                    onClick={handleFetchAIProductCorrection}
-                    disabled={aiProductCorrectionLoading || productSuggestions.length === 0}
-                    className="bg-gray-50 text-[#1F2937] px-4 py-2.5 rounded-xl hover:bg-gray-100 hover:scale-[1.03] active:scale-[0.97] disabled:opacity-50 text-sm font-medium transition-all duration-200"
-                  >
-                    {aiProductCorrectionLoading ? "AI 分析中..." : "AI 智能校正"}
-                  </button>
-                  <button
-                    onClick={handleGenerateProducts}
-                    disabled={loading || !selectedDate}
-                    className="bg-[#F7E1E2] text-[#1F2937] px-6 py-2.5 rounded-xl hover:bg-[#EBCDCF] hover:scale-[1.03] active:scale-[0.97] disabled:opacity-50 text-sm font-medium transition-all duration-200"
-                  >
-                    生成建议
-                  </button>
-                </div>
-              </div>
-
-              {/* Amount deviation indicator */}
-              {productSuggestions.length > 0 && (
-                <div
-                  className={`mb-4 p-3 rounded-2xl text-sm ${
-                    Math.abs(amountDiff) < 1000
-                      ? "bg-green-50/70 text-green-800"
-                      : Math.abs(amountDiff) < 5000
-                      ? "bg-amber-50/70 text-amber-800"
-                      : "bg-red-50/70 text-red-800"
-                  }`}
-                >
-                  <span className="font-medium">金额偏差：</span>
-                  建议总金额 {totalSuggestedAmount.toLocaleString()} |
-                  目标 {currentDayTarget?.shipmentAmount?.toLocaleString()} |
-                  偏差 {amountDiff > 0 ? "+" : ""}
-                  {amountDiff.toLocaleString()} (
-                  {currentDayTarget?.shipmentAmount
-                    ? ((amountDiff / currentDayTarget.shipmentAmount) * 100).toFixed(1)
-                    : 0}
-                  %)
-                </div>
-              )}
-
-              {aiProductCorrectionError && (
-                <div className="mb-4 p-3 bg-red-50/70 text-red-700 rounded-2xl text-sm">
-                  {aiProductCorrectionError}
-                </div>
-              )}
-
-              {aiProductAnalysis && !aiProductCorrectionAdopted && (
-                <div className="mb-4 p-4 bg-[#F7E1E2]/30 rounded-2xl">
-                  <div className="flex items-center justify-between mb-2">
-                    <span className="text-sm font-medium text-[#1F2937]">AI 校正分析</span>
-                    <button
-                      onClick={handleAdoptAIProductCorrection}
-                      className="bg-[#F7E1E2] text-[#1F2937] px-4 py-1.5 rounded-xl text-sm hover:bg-[#EBCDCF] hover:scale-[1.03] active:scale-[0.97] font-medium transition-all duration-200"
-                    >
-                      采纳 AI 建议
-                    </button>
-                  </div>
-                  <p className="text-sm text-[#1F2937]/70">{aiProductAnalysis}</p>
-                </div>
-              )}
-
-              {aiProductCorrectionAdopted && (
-                <div className="mb-4 p-3 bg-green-50/70 text-green-700 rounded-2xl text-sm">
-                  已采纳 AI 单品校正建议
-                </div>
-              )}
-
-              {productSuggestions.length > 0 && (
-                <div className="overflow-x-auto rounded-xl">
-                  <table className="min-w-full text-sm">
-                    <thead className="bg-gray-50/50">
-                      <tr>
-                        <th className="px-3 py-2 text-left text-[#9CA3AF] font-medium text-xs">品名</th>
-                        <th className="px-3 py-2 text-center text-[#9CA3AF] font-medium text-xs">定位</th>
-                        <th className="px-3 py-2 text-center text-[#9CA3AF] font-medium text-xs">冷/热</th>
-                        <th className="px-3 py-2 text-right text-[#9CA3AF] font-medium text-xs">单价</th>
-                        <th className="px-3 py-2 text-right text-[#9CA3AF] font-medium text-xs">倍数</th>
-                        <th className="px-3 py-2 text-right text-[#9CA3AF] font-medium text-xs">历史基线</th>
-                        <th className="px-3 py-2 text-right text-[#9CA3AF] font-medium text-xs">建议数量</th>
-                        {aiProductCorrections.length > 0 && !aiProductCorrectionAdopted && (
-                          <th className="px-3 py-2 text-right text-[#9CA3AF] font-medium text-xs">AI建议</th>
-                        )}
-                        {aiProductCorrections.length > 0 && !aiProductCorrectionAdopted && (
-                          <th className="px-3 py-2 text-left text-[#9CA3AF] font-medium text-xs">AI理由</th>
-                        )}
-                        <th className="px-3 py-2 text-right text-[#9CA3AF] font-medium text-xs">调整数量</th>
-                        <th className="px-3 py-2 text-right text-[#9CA3AF] font-medium text-xs">金额</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {productSuggestions.map((s) => (
-                        <tr
-                          key={s.productName}
-                          className={`hover:bg-[#F7E1E2]/20 transition-colors duration-200 border-b border-gray-50 ${
-                            s.positioning === "TOP"
-                              ? "bg-red-50/20"
-                              : s.positioning === "潜在TOP"
-                              ? "bg-amber-50/20"
-                              : ""
-                          }`}
-                        >
-                          <td className="px-3 py-2 font-medium">
-                            {s.productName}
-                          </td>
-                          <td className="px-3 py-2 text-center">
-                            <span
-                              className={`px-2 py-0.5 rounded-full text-xs ${
-                                s.positioning === "TOP"
-                                  ? "bg-red-100 text-red-700"
-                                  : s.positioning === "潜在TOP"
-                                  ? "bg-amber-100 text-amber-700"
-                                  : "bg-gray-100 text-gray-700"
-                              }`}
-                            >
-                              {s.positioning}
-                            </span>
-                          </td>
-                          <td className="px-3 py-2 text-center">
-                            <span
-                              className={`px-2 py-0.5 rounded-full text-xs ${
-                                s.coldHot === "热"
-                                  ? "bg-red-100 text-red-600"
-                                  : "bg-blue-100 text-blue-600"
-                              }`}
-                            >
-                              {s.coldHot}
-                            </span>
-                          </td>
-                          <td className="px-3 py-2 text-right">{s.price}</td>
-                          <td className="px-3 py-2 text-right">{s.packMultiple}</td>
-                          <td className="px-3 py-2 text-right">{s.baselineQuantity}</td>
-                          <td className="px-3 py-2 text-right">{s.roundedQuantity}</td>
-                          {aiProductCorrections.length > 0 && !aiProductCorrectionAdopted && (() => {
-                            const c = aiProductCorrections.find((x) => x.productName === s.productName);
-                            return (
-                              <>
-                                <td className="px-3 py-2 text-right font-medium text-[#d4727a]">
-                                  {c ? c.suggestedQuantity : "-"}
-                                </td>
-                                <td className="px-3 py-2 text-left text-xs text-[#1F2937]/60 max-w-[200px] truncate">
-                                  {c ? c.reason : "-"}
-                                </td>
-                              </>
-                            );
-                          })()}
-                          <td className="px-3 py-2 text-right">
-                            <input
-                              type="number"
-                              value={
-                                adjustedQuantities[s.productName] ??
-                                s.adjustedQuantity ??
-                                s.roundedQuantity
-                              }
-                              onChange={(e) =>
-                                handleQuantityChange(
-                                  s.productName,
-                                  Number(e.target.value)
-                                )
-                              }
-                              className="w-20 border-0 bg-gray-50 rounded-xl px-2 py-1 text-right text-sm focus:ring-2 focus:ring-[#F7E1E2] focus:outline-none transition-all duration-200"
-                              min={0}
-                              step={s.packMultiple}
-                            />
-                          </td>
-                          <td className="px-3 py-2 text-right font-semibold">
-                            {s.totalAmount.toLocaleString()}
-                          </td>
-                        </tr>
-                      ))}
-                    </tbody>
-                    <tfoot className="bg-[#F7E1E2]/20 font-semibold">
-                      <tr>
-                        <td className="px-3 py-2" colSpan={aiProductCorrections.length > 0 && !aiProductCorrectionAdopted ? 10 : 8}>
-                          合计
-                        </td>
-                        <td className="px-3 py-2 text-right">
-                          {totalSuggestedAmount.toLocaleString()}
-                        </td>
-                      </tr>
-                    </tfoot>
-                  </table>
-                </div>
-              )}
-            </div>
-          </div>
-        )}
-
-        {/* ===== TIME SLOTS TAB ===== */}
-        {activeTab === "timeslots" && (
-          <div className="space-y-6 animate-fade-slide-up">
-            <div className="bg-white rounded-3xl shadow-[0_4px_40px_rgba(0,0,0,0.03)] p-8">
-              <div className="flex items-center justify-between mb-4">
-                <h2 className="text-lg font-semibold text-[#1F2937]">
-                  分时段出货建议 - {selectedDate}
-                </h2>
-                <div className="flex gap-2">
-                  <button
-                    onClick={handleFetchAITimeSlot}
-                    disabled={aiTimeSlotLoading || productSuggestions.length === 0}
-                    className="bg-[#F7E1E2] text-[#1F2937] px-6 py-2.5 rounded-xl hover:bg-[#EBCDCF] hover:scale-[1.03] active:scale-[0.97] disabled:opacity-50 text-sm font-medium transition-all duration-200"
-                  >
-                    {aiTimeSlotLoading ? "AI 分析中..." : "AI 智能分配"}
-                  </button>
-                  <button
-                    onClick={handleGenerateTimeSlots}
-                    disabled={loading || productSuggestions.length === 0}
-                    className="bg-gray-50 text-[#1F2937] px-4 py-2.5 rounded-xl hover:bg-gray-100 hover:scale-[1.03] active:scale-[0.97] disabled:opacity-50 text-sm font-medium transition-all duration-200"
-                  >
-                    规则生成
-                  </button>
-                </div>
-              </div>
-
-              {aiTimeSlotError && (
-                <div className="mb-4 p-3 bg-red-50/70 text-red-700 rounded-2xl text-sm">
-                  {aiTimeSlotError}
-                </div>
-              )}
-
-              {aiTimeSlotAnalysis && !aiTimeSlotAdopted && (
-                <div className="mb-4 p-4 bg-[#F7E1E2]/30 rounded-2xl">
-                  <div className="flex items-center justify-between mb-2">
-                    <span className="text-sm font-medium text-[#1F2937]">AI 分析结果</span>
-                    <button
-                      onClick={handleAdoptAITimeSlot}
-                      className="bg-[#F7E1E2] text-[#1F2937] px-4 py-1.5 rounded-xl text-sm hover:bg-[#EBCDCF] hover:scale-[1.03] active:scale-[0.97] font-medium transition-all duration-200"
-                    >
-                      采纳 AI 建议
-                    </button>
-                  </div>
-                  <p className="text-sm text-[#1F2937]/70">{aiTimeSlotAnalysis}</p>
-                </div>
-              )}
-
-              {aiTimeSlotAdopted && (
-                <div className="mb-4 p-3 bg-green-50/70 text-green-700 rounded-2xl text-sm">
-                  已采纳 AI 分时段建议
-                </div>
-              )}
-
-              {timeSlotSuggestions.length > 0 && (
-                <div className="overflow-x-auto rounded-xl">
-                  <TimeSlotTable
-                    suggestions={timeSlotSuggestions}
-                    productSuggestions={productSuggestions}
-                    fixedSchedule={fixedSchedule}
-                    timeslotSalesRecords={timeslotSalesRecords}
-                  />
-                </div>
-              )}
-            </div>
-          </div>
-        )}
-
-        {/* ===== EXPORT TAB ===== */}
-        {activeTab === "export" && (
-          <div className="space-y-6 animate-fade-slide-up">
-            <div className="bg-white rounded-3xl shadow-[0_4px_40px_rgba(0,0,0,0.03)] p-8">
-              <h2 className="text-lg font-semibold text-[#1F2937] mb-4">导出 Excel</h2>
-              <p className="text-sm text-[#9CA3AF] mb-4">
-                导出当前月度目标、日目标、单品建议和分时段数据。
-              </p>
-              <button
-                onClick={handleExport}
-                disabled={monthlyTargets.length === 0 && dailyTargets.length === 0}
-                className="bg-[#F7E1E2] text-[#1F2937] px-6 py-2.5 rounded-xl hover:bg-[#EBCDCF] hover:scale-[1.03] active:scale-[0.97] disabled:opacity-50 font-medium transition-all duration-200"
-              >
-                导出 Excel 文件
-              </button>
-            </div>
+        {/* Toast Notification */}
+        {toast && (
+          <div className={`fixed bottom-6 right-6 px-4 py-3 rounded-2xl shadow-lg text-sm font-medium z-50 animate-fade-slide-up ${toast.type === "success" ? "bg-green-50 text-green-800" : toast.type === "error" ? "bg-red-50 text-red-800" : "bg-blue-50 text-blue-800"}`}>
+            {toast.message}
           </div>
         )}
       </main>
     </div>
   );
 }
-
 // ========== Sub Components ==========
 function ImportResultCard({ title, result }: { title: string; result: ImportResult }) {
   return (
