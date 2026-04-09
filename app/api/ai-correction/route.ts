@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { GoogleGenerativeAI } from "@google/generative-ai";
 import { query } from "@/lib/db";
 import { buildPrompt } from "@/lib/engine/prompt-engine";
+import { generateWithRetry } from "@/lib/gemini-retry";
 
 interface HolidayRow {
   date: string;
@@ -157,8 +158,7 @@ export async function POST(req: NextRequest) {
       },
     });
 
-    const result = await model.generateContent(prompt);
-    const text = result.response.text();
+    const text = await generateWithRetry(model, prompt);
 
     let corrections;
     try {

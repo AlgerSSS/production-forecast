@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { GoogleGenerativeAI } from "@google/generative-ai";
 import { query } from "@/lib/db";
+import { generateWithRetry } from "@/lib/gemini-retry";
 
 export async function POST(req: NextRequest) {
   try {
@@ -104,8 +105,7 @@ ${JSON.stringify(afterSales)}
       generationConfig: { temperature: 0.1, topP: 0.85, responseMimeType: "application/json" },
     });
 
-    const result = await model.generateContent(prompt);
-    const text = result.response.text();
+    const text = await generateWithRetry(model, prompt);
 
     let parsed;
     try {

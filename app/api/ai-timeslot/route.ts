@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { GoogleGenerativeAI } from "@google/generative-ai";
 import { query } from "@/lib/db";
 import { buildPrompt } from "@/lib/engine/prompt-engine";
+import { generateWithRetry } from "@/lib/gemini-retry";
 
 interface TimeslotSalesRow {
   product_name: string;
@@ -106,8 +107,7 @@ export async function POST(req: NextRequest) {
       systemInstruction,
       generationConfig: { temperature, topP, responseMimeType: "application/json" },
     });
-    const result = await model.generateContent(prompt);
-    const text = result.response.text();
+    const text = await generateWithRetry(model, prompt);
 
     let parsed;
     try {
