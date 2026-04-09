@@ -37,6 +37,7 @@ import {
   getPromptTemplates,
   upsertPromptSegment,
   upsertPromptTemplate,
+  getDailySalesTotal,
 } from "@/lib/actions";
 import {
   parseStockoutLine,
@@ -110,6 +111,7 @@ export default function Home() {
   // V2: Dashboard state
   const [dashboardReview, setDashboardReview] = useState<DailyReviewResult | null>(null);
   const [dashboardEvents, setDashboardEvents] = useState<ContextEvent[]>([]);
+  const [yesterdaySales, setYesterdaySales] = useState<number | null>(null);
 
   // V2: Review state
   const [reviewDate, setReviewDate] = useState(dayjs().format("YYYY-MM-DD"));
@@ -245,12 +247,14 @@ export default function Home() {
         try {
           const yesterday = dayjs().subtract(1, "day").format("YYYY-MM-DD");
           const today = dayjs().format("YYYY-MM-DD");
-          const [review, events] = await Promise.all([
+          const [review, events, ySales] = await Promise.all([
             getDailyReview(yesterday),
             getContextEvents(today),
+            getDailySalesTotal(yesterday),
           ]);
           if (review) setDashboardReview(review);
           setDashboardEvents(events);
+          setYesterdaySales(ySales);
         } catch {
           // Dashboard data is optional
         }
@@ -1291,12 +1295,19 @@ export default function Home() {
               <div className="bg-white rounded-3xl shadow-[0_4px_40px_rgba(0,0,0,0.03)] p-6">
                 <p className="text-xs text-[#9CA3AF] mb-1">昨日营业额</p>
                 <p className="text-xl font-bold text-[#1F2937]">
-                  {dashboardReview ? `RM ${(dashboardReview.review?.stockoutAnalysis?.reduce((s: number, a: { lossAmount: number }) => s + a.lossAmount, 0) || 0).toLocaleString()}` : "—"}
+                  {yesterdaySales !== null ? (yesterdaySales > 0 ? `RM ${yesterdaySales.toLocaleString()}` : "暂无数据") : "—"}
                 </p>
               </div>
               <div className="bg-white rounded-3xl shadow-[0_4px_40px_rgba(0,0,0,0.03)] p-6">
                 <p className="text-xs text-[#9CA3AF] mb-1">昨日达成率</p>
-                <p className="text-xl font-bold text-[#1F2937]">{dashboardReview ? dashboardReview.review?.summary?.slice(0, 10) || "—" : "—"}</p>
+                <p className="text-xl font-bold text-[#1F2937]">{(() => {
+                  if (yesterdaySales === null) return "—";
+                  const yesterday = dayjs().subtract(1, "day").format("YYYY-MM-DD");
+                  const yTarget = dailyTargets.find((d) => d.date === yesterday);
+                  if (!yTarget || !yTarget.shipmentAmount) return "暂无目标";
+                  const rate = ((yesterdaySales / yTarget.shipmentAmount) * 100).toFixed(1);
+                  return `${rate}%`;
+                })()}</p>
               </div>
               <div className="bg-white rounded-3xl shadow-[0_4px_40px_rgba(0,0,0,0.03)] p-6">
                 <p className="text-xs text-[#9CA3AF] mb-1">今日目标</p>

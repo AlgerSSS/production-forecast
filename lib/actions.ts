@@ -1016,3 +1016,21 @@ export async function updateEmpowermentReview(id: number, reviewJson: string): P
 export async function deleteEmpowermentEvent(id: number): Promise<void> {
   await execute("DELETE FROM empowerment_event WHERE id = ?", [id]);
 }
+
+// ========== Dashboard: 昨日实际销售额 ==========
+export async function getDailySalesTotal(date: string): Promise<number> {
+  const rows = await query<{ product_name: string; qty: number }>(
+    `SELECT standard_name as product_name, SUM(quantity) as qty FROM daily_sales_record WHERE date = ? GROUP BY standard_name`,
+    [date]
+  );
+  if (rows.length === 0) return 0;
+
+  const products = await query<{ name: string; price: number }>("SELECT name, price FROM product");
+  const priceMap = new Map(products.map((p) => [p.name, p.price]));
+
+  let total = 0;
+  for (const r of rows) {
+    total += r.qty * (priceMap.get(r.product_name) || 0);
+  }
+  return Math.round(total);
+}
