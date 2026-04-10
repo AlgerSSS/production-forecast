@@ -156,8 +156,8 @@ async function buildBusinessRulesFromDB(): Promise<BusinessRules> {
     monthlyCoefficients: (map.monthlyCoefficients as Record<string, number>) || {},
     weekdayWeights: (map.weekdayWeights as BusinessRules["weekdayWeights"]) || {
       mondayToThursday: 1.0,
-      friday: 1.2,
-      weekend: 1.35,
+      friday: 1.25,
+      weekend: 1.55,
     },
     shipmentFormula: (map.shipmentFormula as BusinessRules["shipmentFormula"]) || {
       tastingWasteRate: 0.06,

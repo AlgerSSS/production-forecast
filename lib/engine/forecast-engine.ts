@@ -54,6 +54,15 @@ export function calculateDailyTargets(
   const daysInMonth = dayjs(`${year}-${String(month).padStart(2, "0")}-01`).daysInMonth();
   const days: { date: string; dayOfWeek: number; dayType: DailyTarget["dayType"]; weight: number }[] = [];
 
+  // Prophet-derived per-dow weights for Mon-Thu (relative to group mean)
+  // Source: Prophet yhat — Mon:40263 Tue:40448 Wed:42336 Thu:50483, mean=43382
+  const prophetDowWeights: Record<number, number> = {
+    1: 0.928,  // Monday
+    2: 0.932,  // Tuesday
+    3: 0.976,  // Wednesday
+    4: 1.164,  // Thursday
+  };
+
   for (let d = 1; d <= daysInMonth; d++) {
     const dateStr = `${year}-${String(month).padStart(2, "0")}-${String(d).padStart(2, "0")}`;
     const dayObj = dayjs(dateStr);
@@ -70,7 +79,7 @@ export function calculateDailyTargets(
       weight = weights.friday;
     } else {
       dayType = "mondayToThursday";
-      weight = weights.mondayToThursday;
+      weight = weights.mondayToThursday * prophetDowWeights[dow];
     }
 
     days.push({ date: dateStr, dayOfWeek: dow, dayType, weight });
