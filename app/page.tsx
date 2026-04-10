@@ -1304,8 +1304,8 @@ export default function Home() {
                   if (yesterdaySales === null) return "—";
                   const yesterday = dayjs().subtract(1, "day").format("YYYY-MM-DD");
                   const yTarget = dailyTargets.find((d) => d.date === yesterday);
-                  if (!yTarget || !yTarget.shipmentAmount) return "暂无目标";
-                  const rate = ((yesterdaySales / yTarget.shipmentAmount) * 100).toFixed(1);
+                  if (!yTarget || !yTarget.revenue) return "暂无目标";
+                  const rate = ((yesterdaySales / yTarget.revenue) * 100).toFixed(1);
                   return `${rate}%`;
                 })()}</p>
               </div>
