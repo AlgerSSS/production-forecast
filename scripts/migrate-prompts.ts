@@ -408,6 +408,36 @@ suggestions 数组中，只需要包含数量>0的记录。每个产品至少有
     sort_order: 10,
   },
   {
+    segment_key: "knowledge.transaction_analysis",
+    category: "knowledge",
+    title: "客单分析方法论",
+    content: `【客单分析方法论】
+营业额 = 客单数 × 客单价（人均消费）。复盘时需拆解分析：
+- 客单数变化：反映客流量，受天气、节日、促销活动影响
+- 客单价变化：反映消费力/产品结构，受产品组合、推荐策略、断货影响
+- 若营业额下降，需判断是"来的人少了"还是"每人花的少了"，对应不同改善策略
+- 客单数下降 → 关注引流、曝光、外卖平台
+- 客单价下降 → 关注产品组合、推荐话术、高单价产品供应`,
+    variables: "",
+    sort_order: 12,
+  },
+  {
+    segment_key: "context.transaction_data",
+    category: "context",
+    title: "近7天客单数据",
+    content: `【近7天客单数据（客单数/客单价趋势）】\n\${transactionData}`,
+    variables: "transactionData",
+    sort_order: 11,
+  },
+  {
+    segment_key: "context.product_trend",
+    category: "context",
+    title: "TOP产品近期销售趋势",
+    content: `【TOP产品近期销售趋势（按日型分类均值）】\n\${productTrendData}`,
+    variables: "productTrendData",
+    sort_order: 12,
+  },
+  {
     segment_key: "rule.review_tasks",
     category: "rule",
     title: "复盘两项任务定义",
@@ -478,7 +508,7 @@ const templates: Template[] = [
     template_key: "daily_review",
     title: "每日复盘",
     system_instruction_key: "role.review_analyst",
-    segment_keys: "rule.review_tasks,knowledge.review_focus,context.feed_data,context.tomorrow_info,context.events,knowledge.payday_cycle,knowledge.day_type_base,format.daily_review",
+    segment_keys: "rule.review_tasks,knowledge.review_focus,knowledge.transaction_analysis,context.feed_data,context.transaction_data,context.product_trend,context.tomorrow_info,context.events,knowledge.payday_cycle,knowledge.day_type_base,format.daily_review",
     model: "gemini-2.5-flash",
     temperature: 0.1,
     top_p: 0.85,

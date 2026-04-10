@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useEffect, useCallback, useRef } from "react";
+import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, Dot } from "recharts";
 import {
   autoImportFromDataDir,
   generateMonthlyTargets,
@@ -39,6 +40,7 @@ import {
   upsertPromptSegment,
   upsertPromptTemplate,
   getDailySalesTotal,
+  getProductSalesTrend,
 } from "@/lib/actions";
 import {
   parseStockoutLine,
@@ -69,12 +71,13 @@ import type {
 import dayjs from "dayjs";
 
 // ========== Tab Components ==========
-type TabId = "dashboard" | "forecast" | "review" | "calendar" | "empowerment" | "settings";
+type TabId = "dashboard" | "forecast" | "review" | "trends" | "calendar" | "empowerment" | "settings";
 
 const TABS: { id: TabId; label: string }[] = [
   { id: "dashboard", label: "今日看板" },
   { id: "forecast", label: "排产预估" },
   { id: "review", label: "每日复盘" },
+  { id: "trends", label: "销售趋势" },
   { id: "calendar", label: "事件日历" },
   { id: "empowerment", label: "赋能分析" },
   { id: "settings", label: "设置" },
@@ -137,6 +140,14 @@ export default function Home() {
 
   // V2: Settings sub-tab
   const [settingsTab, setSettingsTab] = useState<"data" | "business" | "schedule" | "alias" | "holiday">("data");
+
+  // V3: Sales Trend state
+  const [trendSelectedProducts, setTrendSelectedProducts] = useState<string[]>([]);
+  const [trendStartDate, setTrendStartDate] = useState(dayjs().subtract(30, "day").format("YYYY-MM-DD"));
+  const [trendEndDate, setTrendEndDate] = useState(dayjs().format("YYYY-MM-DD"));
+  const [trendData, setTrendData] = useState<{ product_name: string; date: string; day_of_week: number; total_qty: number }[]>([]);
+  const [trendLoading, setTrendLoading] = useState(false);
+  const [trendDropdownOpen, setTrendDropdownOpen] = useState(false);
 
   const [year, setYear] = useState(2026);
   const [selectedMonth, setSelectedMonth] = useState(4);
@@ -2068,6 +2079,140 @@ export default function Home() {
             </div>
           </div>
         )}
+        {/* ===== TRENDS TAB ===== */}
+        {activeTab === "trends" && (
+          <div className="space-y-6 animate-fade-slide-up">
+            <div className="bg-white rounded-3xl shadow-[0_4px_40px_rgba(0,0,0,0.03)] p-8">
+              <h2 className="text-lg font-semibold text-[#1F2937] mb-4">单品销售趋势</h2>
+              <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-4">
+                {/* Product multi-select dropdown */}
+                <div className="md:col-span-2 relative">
+                  <label className="text-sm font-medium text-[#1F2937]">选择产品</label>
+                  <button onClick={() => setTrendDropdownOpen(!trendDropdownOpen)} className="mt-1 w-full border-0 bg-gray-50 rounded-xl px-3 py-2 text-sm text-left focus:ring-2 focus:ring-[#F7E1E2] focus:outline-none transition-all duration-200">
+                    {trendSelectedProducts.length === 0 ? "点击选择产品..." : `已选 ${trendSelectedProducts.length} 个产品`}
+                  </button>
+                  {trendDropdownOpen && (
+                    <div className="absolute z-20 mt-1 w-full bg-white rounded-xl shadow-lg border border-gray-100 max-h-60 overflow-y-auto">
+                      {products.map((p) => (
+                        <label key={p.name} className="flex items-center px-3 py-1.5 hover:bg-gray-50 cursor-pointer text-sm">
+                          <input type="checkbox" checked={trendSelectedProducts.includes(p.name)} onChange={(e) => {
+                            if (e.target.checked) setTrendSelectedProducts((prev) => [...prev, p.name]);
+                            else setTrendSelectedProducts((prev) => prev.filter((n) => n !== p.name));
+                          }} className="mr-2 rounded" />
+                          {p.name}
+                        </label>
+                      ))}
+                      <div className="sticky bottom-0 bg-white border-t p-2 flex gap-2">
+                        <button onClick={() => setTrendSelectedProducts(products.slice(0, 5).map((p) => p.name))} className="text-xs text-[#d4727a] hover:underline">TOP 5</button>
+                        <button onClick={() => setTrendSelectedProducts([])} className="text-xs text-[#9CA3AF] hover:underline">清空</button>
+                        <button onClick={() => setTrendDropdownOpen(false)} className="text-xs ml-auto text-[#1F2937] font-medium">确定</button>
+                      </div>
+                    </div>
+                  )}
+                </div>
+                <div>
+                  <label className="text-sm font-medium text-[#1F2937]">开始日期</label>
+                  <input type="date" value={trendStartDate} onChange={(e) => setTrendStartDate(e.target.value)} className="mt-1 w-full border-0 bg-gray-50 rounded-xl px-3 py-2 text-sm focus:ring-2 focus:ring-[#F7E1E2] focus:outline-none transition-all duration-200" />
+                </div>
+                <div>
+                  <label className="text-sm font-medium text-[#1F2937]">结束日期</label>
+                  <input type="date" value={trendEndDate} onChange={(e) => setTrendEndDate(e.target.value)} className="mt-1 w-full border-0 bg-gray-50 rounded-xl px-3 py-2 text-sm focus:ring-2 focus:ring-[#F7E1E2] focus:outline-none transition-all duration-200" />
+                </div>
+              </div>
+              <button onClick={async () => {
+                if (trendSelectedProducts.length === 0) { showToast("请先选择产品", "error"); return; }
+                setTrendLoading(true);
+                try {
+                  const data = await getProductSalesTrend(trendSelectedProducts, trendStartDate, trendEndDate);
+                  setTrendData(data);
+                  if (data.length === 0) showToast("该时间段无销售数据", "info");
+                } catch { showToast("查询失败", "error"); }
+                finally { setTrendLoading(false); }
+              }} disabled={trendLoading || trendSelectedProducts.length === 0} className="bg-[#F7E1E2] text-[#1F2937] px-6 py-2.5 rounded-xl hover:bg-[#EBCDCF] hover:scale-[1.03] active:scale-[0.97] disabled:opacity-50 font-medium transition-all duration-200">
+                {trendLoading ? "查询中..." : "查询趋势"}
+              </button>
+            </div>
+            {/* Chart area */}
+            {trendData.length > 0 && (() => {
+              // Prepare chart data: pivot by date
+              const dateSet = new Set(trendData.map((d) => d.date));
+              const dates = Array.from(dateSet).sort();
+              const COLORS = ["#d4727a", "#4B9CD3", "#F5A623", "#7B68EE", "#2ECC71", "#E74C3C", "#9B59B6", "#1ABC9C", "#E67E22", "#34495E"];
+              const getDayType = (dow: number) => (dow === 0 || dow === 6) ? "weekend" : dow === 5 ? "friday" : "monThu";
+              const dayTypeColor: Record<string, string> = { monThu: "#4B9CD3", friday: "#F5A623", weekend: "#F7A8B8" };
+              const dayTypeLabel: Record<string, string> = { monThu: "周一至周四", friday: "周五", weekend: "周末" };
+
+              const chartData = dates.map((date) => {
+                const dow = trendData.find((d) => d.date === date)?.day_of_week ?? new Date(date).getDay();
+                const entry: Record<string, unknown> = { date: date.slice(5), fullDate: date, dayType: getDayType(dow) };
+                for (const pName of trendSelectedProducts) {
+                  const row = trendData.find((d) => d.date === date && d.product_name === pName);
+                  entry[pName] = row ? Number(row.total_qty) : 0;
+                }
+                return entry;
+              });
+
+              // Summary: avg by day type per product
+              const summary: Record<string, Record<string, { sum: number; count: number }>> = {};
+              for (const pName of trendSelectedProducts) {
+                summary[pName] = { monThu: { sum: 0, count: 0 }, friday: { sum: 0, count: 0 }, weekend: { sum: 0, count: 0 } };
+              }
+              for (const row of trendData) {
+                const dt = getDayType(row.day_of_week);
+                if (summary[row.product_name]?.[dt]) {
+                  summary[row.product_name][dt].sum += Number(row.total_qty);
+                  summary[row.product_name][dt].count += 1;
+                }
+              }
+
+              return (
+                <>
+                  <div className="bg-white rounded-3xl shadow-[0_4px_40px_rgba(0,0,0,0.03)] p-8">
+                    <h3 className="text-md font-semibold text-[#1F2937] mb-4">销量趋势图</h3>
+                    <div className="flex gap-4 mb-3 text-xs">
+                      {Object.entries(dayTypeLabel).map(([key, label]) => (
+                        <span key={key} className="flex items-center gap-1">
+                          <span className="w-3 h-3 rounded-full inline-block" style={{ backgroundColor: dayTypeColor[key] }} />
+                          {label}
+                        </span>
+                      ))}
+                    </div>
+                    <TrendChart data={chartData} productNames={trendSelectedProducts} colors={COLORS} dayTypeColor={dayTypeColor} />
+                  </div>
+                  <div className="bg-white rounded-3xl shadow-[0_4px_40px_rgba(0,0,0,0.03)] p-8">
+                    <h3 className="text-md font-semibold text-[#1F2937] mb-4">按日型分类平均销量</h3>
+                    <div className="overflow-x-auto">
+                      <table className="w-full text-sm">
+                        <thead>
+                          <tr className="border-b border-gray-100">
+                            <th className="text-left py-2 px-3 text-[#9CA3AF] font-medium">产品</th>
+                            <th className="text-right py-2 px-3 font-medium" style={{ color: dayTypeColor.monThu }}>周一至周四</th>
+                            <th className="text-right py-2 px-3 font-medium" style={{ color: dayTypeColor.friday }}>周五</th>
+                            <th className="text-right py-2 px-3 font-medium" style={{ color: dayTypeColor.weekend }}>周末</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {trendSelectedProducts.map((pName) => {
+                            const s = summary[pName];
+                            const avg = (d: { sum: number; count: number }) => d.count > 0 ? (d.sum / d.count).toFixed(1) : "—";
+                            return (
+                              <tr key={pName} className="border-b border-gray-50 hover:bg-[#F7E1E2]/10">
+                                <td className="py-2 px-3 font-medium text-[#1F2937]">{pName}</td>
+                                <td className="py-2 px-3 text-right">{avg(s.monThu)}</td>
+                                <td className="py-2 px-3 text-right">{avg(s.friday)}</td>
+                                <td className="py-2 px-3 text-right">{avg(s.weekend)}</td>
+                              </tr>
+                            );
+                          })}
+                        </tbody>
+                      </table>
+                    </div>
+                  </div>
+                </>
+              );
+            })()}
+          </div>
+        )}
         {/* ===== SETTINGS TAB ===== */}
         {activeTab === "settings" && (
           <div className="space-y-6 animate-fade-slide-up">
@@ -2753,5 +2898,55 @@ function TimeSlotTable({
         })()}
       </tfoot>
     </table>
+  );
+}
+
+// ========== TrendChart Component ==========
+function TrendChart({ data, productNames, colors, dayTypeColor }: {
+  data: Record<string, unknown>[];
+  productNames: string[];
+  colors: string[];
+  dayTypeColor: Record<string, string>;
+}) {
+  // Custom dot that colors by day type
+  const renderDot = (props: { cx?: number; cy?: number; payload?: Record<string, unknown> }) => {
+    const { cx, cy, payload } = props;
+    if (cx == null || cy == null || !payload) return null;
+    const dt = payload.dayType as string;
+    return <Dot cx={cx} cy={cy} r={4} fill={dayTypeColor[dt] || "#ccc"} stroke="#fff" strokeWidth={1} />;
+  };
+
+  return (
+    <ResponsiveContainer width="100%" height={400}>
+      <LineChart data={data} margin={{ top: 5, right: 30, left: 0, bottom: 5 }}>
+        <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" />
+        <XAxis dataKey="date" tick={{ fontSize: 11 }} />
+        <YAxis tick={{ fontSize: 11 }} />
+        <Tooltip
+          contentStyle={{ borderRadius: 12, border: "none", boxShadow: "0 4px 20px rgba(0,0,0,0.08)" }}
+          labelFormatter={(label, payload) => {
+            if (payload && payload.length > 0) {
+              const p = payload[0]?.payload as Record<string, unknown> | undefined;
+              const dt = p?.dayType as string;
+              const dtLabels: Record<string, string> = { monThu: "周中", friday: "周五", weekend: "周末" };
+              return `${p?.fullDate || label} (${dtLabels[dt] || ""})`;
+            }
+            return String(label);
+          }}
+        />
+        <Legend />
+        {productNames.map((name, i) => (
+          <Line
+            key={name}
+            type="monotone"
+            dataKey={name}
+            stroke={colors[i % colors.length]}
+            strokeWidth={2}
+            dot={renderDot}
+            activeDot={{ r: 6 }}
+          />
+        ))}
+      </LineChart>
+    </ResponsiveContainer>
   );
 }

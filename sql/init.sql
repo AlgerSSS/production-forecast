@@ -194,6 +194,8 @@ CREATE TABLE IF NOT EXISTS prompt_template (
 CREATE TABLE IF NOT EXISTS daily_revenue (
   date VARCHAR(10) NOT NULL,
   revenue DOUBLE PRECISION NOT NULL DEFAULT 0,
+  transaction_count INT,
+  avg_transaction_value DOUBLE PRECISION,
   CONSTRAINT uk_daily_revenue_date UNIQUE (date)
 );
 

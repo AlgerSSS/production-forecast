@@ -53,6 +53,57 @@ export async function POST(req: NextRequest) {
       ? tomorrowHoliday.map((h) => `[${h.type}] ${h.name}${h.note ? `（${h.note}）` : ""}`).join("; ")
       : "无";
 
+    // 查询近7天客单数据
+    const txStart = dayjs(feedData.date).subtract(6, "day").format("YYYY-MM-DD");
+    const txRows = await query<{ date: string; revenue: number; transaction_count: number | null; avg_transaction_value: number | null }>(
+      "SELECT date, revenue, transaction_count, avg_transaction_value FROM daily_revenue WHERE date >= ? AND date <= ? ORDER BY date",
+      [txStart, feedData.date]
+    );
+    const transactionData = txRows.length > 0
+      ? txRows.map((r) => `${r.date}: 营业额=${r.revenue}, 客单数=${r.transaction_count ?? "N/A"}, 客单价=${r.avg_transaction_value ?? "N/A"}`).join("\n")
+      : "暂无客单数据";
+
+    // 查询TOP产品近14天销售趋势（按日型分组计算均值）
+    const trendStart = dayjs(feedData.date).subtract(13, "day").format("YYYY-MM-DD");
+    const topProducts = await query<{ standard_name: string }>(
+      `SELECT DISTINCT standard_name FROM daily_sales_record
+       WHERE date >= ? AND date <= ?
+       GROUP BY standard_name
+       ORDER BY SUM(quantity) DESC LIMIT 10`,
+      [trendStart, feedData.date]
+    );
+    let productTrendData = "暂无产品趋势数据";
+    if (topProducts.length > 0) {
+      const topNames = topProducts.map((p) => p.standard_name);
+      const placeholders = topNames.map((_, i) => `$${i + 3}`).join(", ");
+      const trendRows = await query<{ standard_name: string; day_of_week: number; avg_qty: number }>(
+        `SELECT standard_name, day_of_week, AVG(quantity) AS avg_qty
+         FROM daily_sales_record
+         WHERE date >= $1 AND date <= $2 AND standard_name IN (${placeholders})
+         GROUP BY standard_name, day_of_week
+         ORDER BY standard_name, day_of_week`,
+        [trendStart, feedData.date, ...topNames]
+      );
+      // Group by product, then by day type
+      const trendMap = new Map<string, { monThu: number[]; fri: number[]; weekend: number[] }>();
+      for (const row of trendRows) {
+        if (!trendMap.has(row.standard_name)) {
+          trendMap.set(row.standard_name, { monThu: [], fri: [], weekend: [] });
+        }
+        const entry = trendMap.get(row.standard_name)!;
+        const dow = row.day_of_week;
+        if (dow === 0 || dow === 6) entry.weekend.push(Number(row.avg_qty));
+        else if (dow === 5) entry.fri.push(Number(row.avg_qty));
+        else entry.monThu.push(Number(row.avg_qty));
+      }
+      const lines: string[] = [];
+      for (const [name, data] of trendMap) {
+        const avg = (arr: number[]) => arr.length > 0 ? (arr.reduce((a, b) => a + b, 0) / arr.length).toFixed(1) : "N/A";
+        lines.push(`${name}: 周中均值=${avg(data.monThu)}, 周五均值=${avg(data.fri)}, 周末均值=${avg(data.weekend)}`);
+      }
+      productTrendData = lines.join("\n");
+    }
+
     // 构建prompt
     const dayTypeLabels: Record<string, string> = {
       mondayToThursday: "周中(周一至周四)",
@@ -72,10 +123,11 @@ export async function POST(req: NextRequest) {
 【任务一：今日复盘】
 分析今天的经营表现，重点关注：
 1. 营业额达成情况及原因分析
-2. 断货产品的损失评估（哪些产品断货最严重，损失了多少）
-3. 哪些产品表现超预期/低于预期
-4. 时段销售分布是否合理（是否有某时段供应不足）
-5. 外部事件（天气/活动/竞品）对今天的实际影响
+2. 客单数/客单价拆解分析（营业额=客单数×客单价，判断是客流还是消费力变化）
+3. 断货产品的损失评估（哪些产品断货最严重，损失了多少）
+4. 哪些产品表现超预期/低于预期
+5. 时段销售分布是否合理（是否有某时段供应不足）
+6. 外部事件（天气/活动/竞品）对今天的实际影响
 
 【任务二：明日预估调整建议】
 基于今天的复盘和明天的已知信息（日期类型、已录入事件），输出：
@@ -86,6 +138,12 @@ export async function POST(req: NextRequest) {
 
 【今日数据】
 ${JSON.stringify(feedData, null, 2)}
+
+【近7天客单数据】
+${transactionData}
+
+【TOP产品近期销售趋势（按日型分类均值）】
+${productTrendData}
 
 【今日节日信息（来自数据库，请严格基于此数据分析，不要编造节日）】
 ${todayHolidayStr}
@@ -128,6 +186,8 @@ ${todayHolidayStr}
           eventsInfo: tomorrowEventsStr,
           todayHoliday: todayHolidayStr,
           tomorrowHoliday: tomorrowHolidayStr,
+          transactionData,
+          productTrendData,
         };
         const built = await buildPrompt("daily_review", vars);
         systemInstruction = built.systemInstruction;

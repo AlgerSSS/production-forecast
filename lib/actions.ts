@@ -1145,18 +1145,31 @@ export async function deleteEmpowermentEvent(id: number): Promise<void> {
 }
 
 // ========== Daily Revenue Actions ==========
-export async function upsertDailyRevenue(date: string, revenue: number): Promise<void> {
+export async function upsertDailyRevenue(date: string, revenue: number, transactionCount?: number, avgTransactionValue?: number): Promise<void> {
   await execute(
-    `INSERT INTO daily_revenue (date, revenue) VALUES (?, ?)
-     ON CONFLICT (date) DO UPDATE SET revenue = EXCLUDED.revenue`,
-    [date, revenue]
+    `INSERT INTO daily_revenue (date, revenue, transaction_count, avg_transaction_value) VALUES (?, ?, ?, ?)
+     ON CONFLICT (date) DO UPDATE SET revenue = EXCLUDED.revenue, transaction_count = COALESCE(EXCLUDED.transaction_count, daily_revenue.transaction_count), avg_transaction_value = COALESCE(EXCLUDED.avg_transaction_value, daily_revenue.avg_transaction_value)`,
+    [date, revenue, transactionCount ?? null, avgTransactionValue ?? null]
   );
 }
 
-export async function getDailyRevenues(startDate: string, endDate: string): Promise<{ date: string; revenue: number }[]> {
-  return query<{ date: string; revenue: number }>(
-    "SELECT date, revenue FROM daily_revenue WHERE date >= ? AND date <= ? ORDER BY date",
+export async function getDailyRevenues(startDate: string, endDate: string): Promise<{ date: string; revenue: number; transaction_count: number | null; avg_transaction_value: number | null }[]> {
+  return query<{ date: string; revenue: number; transaction_count: number | null; avg_transaction_value: number | null }>(
+    "SELECT date, revenue, transaction_count, avg_transaction_value FROM daily_revenue WHERE date >= ? AND date <= ? ORDER BY date",
     [startDate, endDate]
+  );
+}
+
+export async function getProductSalesTrend(productNames: string[], startDate: string, endDate: string): Promise<{ product_name: string; date: string; day_of_week: number; total_qty: number }[]> {
+  if (productNames.length === 0) return [];
+  const placeholders = productNames.map((_, i) => `$${i + 3}`).join(", ");
+  return query<{ product_name: string; date: string; day_of_week: number; total_qty: number }>(
+    `SELECT standard_name AS product_name, date, day_of_week, SUM(quantity) AS total_qty
+     FROM daily_sales_record
+     WHERE date >= $1 AND date <= $2 AND standard_name IN (${placeholders})
+     GROUP BY standard_name, date, day_of_week
+     ORDER BY date, standard_name`,
+    [startDate, endDate, ...productNames]
   );
 }
 
