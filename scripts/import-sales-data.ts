@@ -88,7 +88,36 @@ async function main() {
   console.log(`Imported ${records.length} sales records. Unmatched: ${[...unmatchedSet].join(', ') || 'none'}`);
 
   // Recalculate baselines
-  // ... (handled by existing app logic on next load)
+  console.log('Recalculating product_sales_baseline...');
+  await sql`DELETE FROM product_sales_baseline`;
+  await sql`
+    INSERT INTO product_sales_baseline (product_name, avg_monday_to_thursday, avg_friday, avg_weekend, total_sales, day_count)
+    SELECT
+      p.name,
+      COALESCE(b.avg_mt, 0),
+      COALESCE(b.avg_fri, 0),
+      COALESCE(b.avg_wkd, 0),
+      COALESCE(b.total_sales, 0),
+      COALESCE(b.day_count, 0)
+    FROM product p
+    LEFT JOIN (
+      SELECT
+        standard_name,
+        ROUND(AVG(qty) FILTER (WHERE day_of_week BETWEEN 1 AND 4)) as avg_mt,
+        ROUND(AVG(qty) FILTER (WHERE day_of_week = 5)) as avg_fri,
+        ROUND(AVG(qty) FILTER (WHERE day_of_week IN (0, 6))) as avg_wkd,
+        SUM(qty)::int as total_sales,
+        COUNT(DISTINCT date)::int as day_count
+      FROM (
+        SELECT standard_name, date, day_of_week, SUM(quantity) as qty
+        FROM daily_sales_record
+        GROUP BY standard_name, date, day_of_week
+      ) daily
+      GROUP BY standard_name
+    ) b ON b.standard_name = p.name
+  `;
+  const baselineCount = await sql`SELECT COUNT(*) as cnt FROM product_sales_baseline`;
+  console.log(`Recalculated ${baselineCount[0].cnt} product baselines.`);
 
   // ===== 2. 导入时段菜品汇总表 -> timeslot_sales_record =====
   await importTimeslotData();
