@@ -332,7 +332,9 @@ export default function Home() {
       const dailies = await generateDailyTargets(target);
       setDailyTargets(dailies);
       if (dailies.length > 0 && !selectedDate) {
-        setSelectedDate(dailies[0].date);
+        const today = dayjs().format("YYYY-MM-DD");
+        const todayInList = dailies.find((d) => d.date === today);
+        setSelectedDate(todayInList ? today : dailies[0].date);
       }
     }
     setLoading(false);
@@ -1312,13 +1314,21 @@ export default function Home() {
               <div className="bg-white rounded-3xl shadow-[0_4px_40px_rgba(0,0,0,0.03)] p-6">
                 <p className="text-xs text-[#9CA3AF] mb-1">今日目标</p>
                 <p className="text-xl font-bold text-[#1F2937]">
-                  {currentDayTarget ? `RM ${currentDayTarget.revenue.toLocaleString()}` : "—"}
+                  {(() => {
+                    const today = dayjs().format("YYYY-MM-DD");
+                    const todayTarget = dailyTargets.find((d) => d.date === today);
+                    return todayTarget ? `RM ${todayTarget.revenue.toLocaleString()}` : "—";
+                  })()}
                 </p>
               </div>
               <div className="bg-white rounded-3xl shadow-[0_4px_40px_rgba(0,0,0,0.03)] p-6">
                 <p className="text-xs text-[#9CA3AF] mb-1">今日出货</p>
                 <p className="text-xl font-bold text-[#1F2937]">
-                  {currentDayTarget ? `RM ${currentDayTarget.shipmentAmount.toLocaleString()}` : "—"}
+                  {(() => {
+                    const today = dayjs().format("YYYY-MM-DD");
+                    const todayTarget = dailyTargets.find((d) => d.date === today);
+                    return todayTarget ? `RM ${todayTarget.shipmentAmount.toLocaleString()}` : "—";
+                  })()}
                 </p>
               </div>
             </div>
