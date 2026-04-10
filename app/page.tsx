@@ -29,6 +29,7 @@ import {
   getDailyReview,
   adoptDailyReview,
   saveOutOfStockRecords,
+  deleteOutOfStockByDate,
   getOutOfStockRecords,
   getEmpowermentEvents,
   addEmpowermentEvent,
@@ -314,20 +315,22 @@ export default function Home() {
   }, []);
 
   // ========== Generate Monthly Targets ==========
-  const handleGenerateMonthly = useCallback(async () => {
+  const handleGenerateMonthly = useCallback(async (): Promise<MonthlyTarget[]> => {
     setLoading(true);
     const targets = await generateMonthlyTargetsWithCustomCoefficients(year, monthlyCoefficients);
     setMonthlyTargets(targets);
     setLoading(false);
+    return targets;
   }, [year, monthlyCoefficients]);
 
   // ========== Generate Daily Targets ==========
   const handleGenerateDaily = useCallback(async () => {
-    if (monthlyTargets.length === 0) {
-      await handleGenerateMonthly();
+    let targets = monthlyTargets;
+    if (targets.length === 0) {
+      targets = await handleGenerateMonthly();
     }
     setLoading(true);
-    const target = monthlyTargets.find((t) => t.month === selectedMonth);
+    const target = targets.find((t) => t.month === selectedMonth);
     if (target) {
       const dailies = await generateDailyTargets(target);
       setDailyTargets(dailies);
@@ -1831,12 +1834,15 @@ export default function Home() {
                 <textarea value={stockoutText} onChange={(e) => {
                   setStockoutText(e.target.value);
                   const lines = e.target.value.split("\n").filter(Boolean);
+                  // Compute real dayType from reviewDate
+                  const dow = new Date(reviewDate).getDay();
+                  const realDayType: OutOfStockRecord["dayType"] = (dow === 0 || dow === 6) ? "weekend" : dow === 5 ? "friday" : "mondayToThursday";
                   const parsed = lines.map((line) => {
                     const result = parseStockoutLine(line);
                     if (!result) return null;
                     const lossSlots = calculateLossSlots(result.soldoutTime);
                     const soldoutSlot = `${result.soldoutTime.split(":")[0]}:00`;
-                    return { productName: result.inputName, inputName: result.inputName, soldoutTime: result.soldoutTime, soldoutSlot, date: reviewDate, lossSlots, dayType: "mondayToThursday" as OutOfStockRecord["dayType"], estimatedLossQty: 0, estimatedLossAmount: 0 } satisfies OutOfStockRecord;
+                    return { productName: result.inputName, inputName: result.inputName, soldoutTime: result.soldoutTime, soldoutSlot, date: reviewDate, lossSlots, dayType: realDayType, estimatedLossQty: 0, estimatedLossAmount: 0 } satisfies OutOfStockRecord;
                   }).filter((x): x is OutOfStockRecord => x !== null);
                   setParsedStockouts(parsed);
                 }} placeholder={"奶油泡芙 3点\n巧克力蛋糕 下午2点\n抹茶卷 14:00"} rows={5} className="mt-1 w-full border-0 bg-gray-50 rounded-xl px-3 py-2 text-sm focus:ring-2 focus:ring-[#F7E1E2] focus:outline-none transition-all duration-200 font-mono" />
@@ -1856,7 +1862,19 @@ export default function Home() {
               <button onClick={async () => {
                 setReviewLoading(true);
                 try {
-                  if (parsedStockouts.length > 0) await saveOutOfStockRecords(parsedStockouts.map((s) => ({ ...s, date: reviewDate })));
+                  if (parsedStockouts.length > 0) {
+                    // Compute loss amounts using timeslot history and product prices
+                    const enriched = parsedStockouts.map((s) => {
+                      const product = products.find((p) => p.name === s.productName);
+                      const price = product?.price || 0;
+                      const history = timeslotSalesRecords || [];
+                      const { lossQty, lossAmount } = calculateStockoutLoss(s, history, price);
+                      return { ...s, date: reviewDate, estimatedLossQty: lossQty, estimatedLossAmount: lossAmount };
+                    });
+                    // Dedup: clear old records for this date before saving
+                    await deleteOutOfStockByDate(reviewDate);
+                    await saveOutOfStockRecords(enriched);
+                  }
                   const res = await fetch("/api/daily-review", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ feedData: { date: reviewDate, actualRevenue: Number(reviewActualRevenue) || 0, stockoutRecords: parsedStockouts } }) });
                   const data = await res.json();
                   if (res.ok) { setReviewResult(data); showToast("AI 复盘完成", "success"); }

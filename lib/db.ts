@@ -50,3 +50,41 @@ export async function execute(
   }
   return { affectedRows: result.count ?? 0, insertId: 0 };
 }
+
+// 事务支持：在一个事务中执行多个操作
+export async function withTransaction<T>(
+  fn: (tx: { query: typeof query; execute: typeof execute }) => Promise<T>
+): Promise<T> {
+  const db = getSQL();
+  return await db.begin(async (sql) => {
+    const txQuery = async <R = Record<string, unknown>>(
+      sqlStr: string,
+      params?: unknown[]
+    ): Promise<R[]> => {
+      if (params && params.length > 0) {
+        let idx = 0;
+        const pgSql = sqlStr.replace(/\?/g, () => `$${++idx}`);
+        const result = await sql.unsafe(pgSql, params as (string | number | boolean | null)[]);
+        return result as unknown as R[];
+      }
+      const result = await sql.unsafe(sqlStr);
+      return result as unknown as R[];
+    };
+
+    const txExecute = async (
+      sqlStr: string,
+      params?: unknown[]
+    ): Promise<{ affectedRows: number; insertId: number }> => {
+      if (params && params.length > 0) {
+        let idx = 0;
+        const pgSql = sqlStr.replace(/\?/g, () => `$${++idx}`);
+        const result = await sql.unsafe(pgSql, params as (string | number | boolean | null)[]);
+        return { affectedRows: result.count ?? 0, insertId: 0 };
+      }
+      const result = await sql.unsafe(sqlStr);
+      return { affectedRows: result.count ?? 0, insertId: 0 };
+    };
+
+    return await fn({ query: txQuery, execute: txExecute });
+  }) as T;
+}

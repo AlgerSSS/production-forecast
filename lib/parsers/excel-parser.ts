@@ -2,12 +2,20 @@ import ExcelJS from "exceljs";
 import { Product, DailySalesRecord, ProductStrategy, TimeslotSalesRecord } from "@/lib/types";
 import productAliasConfig from "@/config/product-aliases.json";
 
-const aliasMap: Record<string, string> = productAliasConfig.aliases;
+const staticAliasMap: Record<string, string> = productAliasConfig.aliases;
+
+/** Merged alias map: DB aliases override static config */
+let mergedAliasMap: Record<string, string> = { ...staticAliasMap };
+
+/** Call before import to merge DB aliases with static config (DB wins on conflict) */
+export function setDatabaseAliases(dbAliases: Record<string, string>): void {
+  mergedAliasMap = { ...staticAliasMap, ...dbAliases };
+}
 
 export function resolveProductName(name: string): string {
   if (!name) return "";
   const trimmed = name.trim();
-  const resolved = aliasMap[trimmed] || trimmed;
+  const resolved = mergedAliasMap[trimmed] || trimmed;
   // Products mapped to _REMOVED_ are discontinued
   if (resolved === "_REMOVED_") return "";
   return resolved;
@@ -148,6 +156,7 @@ export async function parseSalesData(
 
     if (!productNameSet.has(standardName)) {
       unmatchedSet.add(rawName);
+      return; // Skip unmatched products — don't pollute sales fact table
     }
 
     records.push({

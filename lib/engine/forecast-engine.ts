@@ -502,7 +502,16 @@ export function calculateTimeSlotSuggestions(
     const fullQty = product.displayFullQuantity || 0;
 
     // Fixed schedule is the hard constraint — only these slots can receive shipments
-    const targetSlots = (schedule && schedule.length > 0) ? schedule : ["11:00"];
+    // Fallback: if no fixed schedule, use historical timeslot data; last resort: ["11:00"]
+    let targetSlots: string[];
+    if (schedule && schedule.length > 0) {
+      targetSlots = schedule;
+    } else if (productHistory && productHistory.size > 0) {
+      // Use all time slots that have historical sales data
+      targetSlots = Array.from(productHistory.keys()).sort();
+    } else {
+      targetSlots = ["11:00"];
+    }
 
     if (targetSlots.length === 1) {
       slotSuggestions.push({

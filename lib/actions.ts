@@ -8,6 +8,7 @@ import {
   parseStrategyData,
   parseTimeslotSalesData,
   parseDisplayFullQuantity,
+  setDatabaseAliases,
 } from "@/lib/parsers/excel-parser";
 import {
   calculateMonthlyTargets,
@@ -37,7 +38,7 @@ import {
   PromptTemplate,
   EmpowermentEvent,
 } from "@/lib/types";
-import { query, execute } from "@/lib/db";
+import { query, execute, withTransaction } from "@/lib/db";
 
 // ========== DB Row Types ==========
 interface ProductRow {
@@ -201,16 +202,18 @@ export async function importProductPrices(formData: FormData): Promise<ImportRes
     const buffer = await file.arrayBuffer();
     const products = await parseProductPrices(buffer);
 
-    // Clear and insert into DB
-    await execute("DELETE FROM product");
-    for (const p of products) {
-      await execute(
-        `INSERT INTO product (category, name, name_en, price, pack_multiple, unit_type)
-         VALUES (?, ?, ?, ?, ?, ?)
-         ON CONFLICT (name) DO UPDATE SET category=EXCLUDED.category, name_en=EXCLUDED.name_en, price=EXCLUDED.price, pack_multiple=EXCLUDED.pack_multiple, unit_type=EXCLUDED.unit_type`,
-        [p.category, p.name, p.nameEn, p.price, p.packMultiple, p.unitType]
-      );
-    }
+    // Clear and insert into DB within a transaction
+    await withTransaction(async (tx) => {
+      await tx.execute("DELETE FROM product");
+      for (const p of products) {
+        await tx.execute(
+          `INSERT INTO product (category, name, name_en, price, pack_multiple, unit_type)
+           VALUES (?, ?, ?, ?, ?, ?)
+           ON CONFLICT (name) DO UPDATE SET category=EXCLUDED.category, name_en=EXCLUDED.name_en, price=EXCLUDED.price, pack_multiple=EXCLUDED.pack_multiple, unit_type=EXCLUDED.unit_type`,
+          [p.category, p.name, p.nameEn, p.price, p.packMultiple, p.unitType]
+        );
+      }
+    });
 
     return { success: true, totalRows: products.length, importedRows: products.length, skippedRows: 0, errors: [] };
   } catch (error) {
@@ -225,32 +228,38 @@ export async function importSalesData(formData: FormData): Promise<ImportResult>
 
     const buffer = await file.arrayBuffer();
     const products = await getProducts();
+    // Merge DB aliases before parsing
+    const dbAliases = await getProductAliases();
+    setDatabaseAliases(dbAliases);
     const { records, unmatchedProducts } = await parseSalesData(buffer, products);
 
-    // Save sales records to DB
-    await execute("DELETE FROM daily_sales_record");
-    const BATCH = 500;
-    for (let i = 0; i < records.length; i += BATCH) {
-      const batch = records.slice(i, i + BATCH);
-      const placeholders = batch.map(() => "(?, ?, ?, ?, ?)").join(",");
-      const flat = batch.flatMap((r) => [r.productName, r.standardName, r.quantity, r.date, r.dayOfWeek]);
-      await execute(
-        `INSERT INTO daily_sales_record (product_name, standard_name, quantity, date, day_of_week) VALUES ${placeholders}`,
-        flat
-      );
-    }
-
-    // Calculate and save baselines
+    // Calculate baselines before transaction (pure computation)
     const businessRules = await buildBusinessRulesFromDB();
     const baselines = calculateSalesBaselines(records, products, businessRules.baselineOverrides);
-    await execute("DELETE FROM product_sales_baseline");
-    for (const b of baselines) {
-      await execute(
-        `INSERT INTO product_sales_baseline (product_name, avg_monday_to_thursday, avg_friday, avg_weekend, total_sales, day_count)
-         VALUES (?, ?, ?, ?, ?, ?)`,
-        [b.productName, b.avgMondayToThursday, b.avgFriday, b.avgWeekend, b.totalSales, b.dayCount]
-      );
-    }
+
+    // Save sales records + baselines in a single transaction
+    await withTransaction(async (tx) => {
+      await tx.execute("DELETE FROM daily_sales_record");
+      const BATCH = 500;
+      for (let i = 0; i < records.length; i += BATCH) {
+        const batch = records.slice(i, i + BATCH);
+        const placeholders = batch.map(() => "(?, ?, ?, ?, ?)").join(",");
+        const flat = batch.flatMap((r) => [r.productName, r.standardName, r.quantity, r.date, r.dayOfWeek]);
+        await tx.execute(
+          `INSERT INTO daily_sales_record (product_name, standard_name, quantity, date, day_of_week) VALUES ${placeholders}`,
+          flat
+        );
+      }
+
+      await tx.execute("DELETE FROM product_sales_baseline");
+      for (const b of baselines) {
+        await tx.execute(
+          `INSERT INTO product_sales_baseline (product_name, avg_monday_to_thursday, avg_friday, avg_weekend, total_sales, day_count)
+           VALUES (?, ?, ?, ?, ?, ?)`,
+          [b.productName, b.avgMondayToThursday, b.avgFriday, b.avgWeekend, b.totalSales, b.dayCount]
+        );
+      }
+    });
 
     return { success: true, totalRows: records.length, importedRows: records.length, skippedRows: 0, errors: [], unmatchedProducts };
   } catch (error) {
@@ -266,21 +275,23 @@ export async function importStrategyData(formData: FormData): Promise<ImportResu
     const buffer = await file.arrayBuffer();
     const strategies = await parseStrategyData(buffer);
 
-    await execute("DELETE FROM product_strategy");
-    const seen = new Set<string>();
-    let sortOrder = 0;
-    for (const s of strategies) {
-      if (seen.has(s.productName)) continue;
-      seen.add(s.productName);
-      sortOrder++;
-      await execute(
-        `INSERT INTO product_strategy (product_name, positioning, category, cold_hot, sales_ratio, target_tc, audience, break_stock_time, sort_order)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-         ON CONFLICT (product_name) DO UPDATE SET positioning=EXCLUDED.positioning, category=EXCLUDED.category, cold_hot=EXCLUDED.cold_hot,
-         sales_ratio=EXCLUDED.sales_ratio, target_tc=EXCLUDED.target_tc, audience=EXCLUDED.audience, break_stock_time=EXCLUDED.break_stock_time, sort_order=EXCLUDED.sort_order`,
-        [s.productName, s.positioning, s.category, s.coldHot, s.salesRatio, s.targetTC, s.audience, s.breakStockTime, sortOrder]
-      );
-    }
+    await withTransaction(async (tx) => {
+      await tx.execute("DELETE FROM product_strategy");
+      const seen = new Set<string>();
+      let sortOrder = 0;
+      for (const s of strategies) {
+        if (seen.has(s.productName)) continue;
+        seen.add(s.productName);
+        sortOrder++;
+        await tx.execute(
+          `INSERT INTO product_strategy (product_name, positioning, category, cold_hot, sales_ratio, target_tc, audience, break_stock_time, sort_order)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+           ON CONFLICT (product_name) DO UPDATE SET positioning=EXCLUDED.positioning, category=EXCLUDED.category, cold_hot=EXCLUDED.cold_hot,
+           sales_ratio=EXCLUDED.sales_ratio, target_tc=EXCLUDED.target_tc, audience=EXCLUDED.audience, break_stock_time=EXCLUDED.break_stock_time, sort_order=EXCLUDED.sort_order`,
+          [s.productName, s.positioning, s.category, s.coldHot, s.salesRatio, s.targetTC, s.audience, s.breakStockTime, sortOrder]
+        );
+      }
+    });
 
     return { success: true, totalRows: strategies.length, importedRows: strategies.length, skippedRows: 0, errors: [] };
   } catch (error) {
@@ -362,6 +373,9 @@ export async function autoImportFromDataDir(): Promise<{
   let salesResult: ImportResult;
   try {
     const products = await getProducts();
+    // Merge DB aliases before parsing
+    const dbAliases = await getProductAliases();
+    setDatabaseAliases(dbAliases);
     const buf = await readFile(path.join(dataDir, "单品销售数量1.1-4.2.xlsx"));
     const { records, unmatchedProducts } = await parseSalesData(buf.buffer as ArrayBuffer, products);
 
@@ -403,11 +417,18 @@ export async function autoImportFromDataDir(): Promise<{
     if (fs.existsSync(timeslotDir)) {
       const files = fs.readdirSync(timeslotDir).filter((f: string) => f.endsWith(".xlsx"));
       if (files.length > 0) {
-        const buf = await readFile(path.join(timeslotDir, files[0]));
-        const { records: tsRecords, unmatchedProducts: tsUnmatched } = await parseTimeslotSalesData(buf.buffer as ArrayBuffer, products);
+        // Read and merge all xlsx files in the directory
+        let allTsRecords: TimeslotSalesRecord[] = [];
+        const allTsUnmatched = new Set<string>();
+        for (const file of files) {
+          const buf = await readFile(path.join(timeslotDir, file));
+          const { records: tsRecords, unmatchedProducts: tsUnmatched } = await parseTimeslotSalesData(buf.buffer as ArrayBuffer, products);
+          allTsRecords = allTsRecords.concat(tsRecords);
+          for (const u of tsUnmatched) allTsUnmatched.add(u);
+        }
 
         await execute("DELETE FROM timeslot_sales_record");
-        for (const r of tsRecords) {
+        for (const r of allTsRecords) {
           await execute(
             `INSERT INTO timeslot_sales_record (product_name, day_type, time_slot, avg_quantity, sample_count)
              VALUES (?, ?, ?, ?, ?)
@@ -415,7 +436,7 @@ export async function autoImportFromDataDir(): Promise<{
             [r.productName, r.dayType, r.timeSlot, r.avgQuantity, r.sampleCount]
           );
         }
-        timeslotResult = { success: true, totalRows: tsRecords.length, importedRows: tsRecords.length, skippedRows: 0, errors: [], unmatchedProducts: tsUnmatched };
+        timeslotResult = { success: true, totalRows: allTsRecords.length, importedRows: allTsRecords.length, skippedRows: 0, errors: [], unmatchedProducts: Array.from(allTsUnmatched) };
       } else {
         timeslotResult = { success: false, totalRows: 0, importedRows: 0, skippedRows: 0, errors: ["时段销售目录下无 xlsx 文件"] };
       }
@@ -801,7 +822,7 @@ export async function importTimeslotSalesData(
       await execute(
         `INSERT INTO timeslot_sales_record (product_name, day_type, time_slot, avg_quantity, sample_count)
          VALUES (?, ?, ?, ?, ?)
-         ON DUPLICATE KEY UPDATE avg_quantity=VALUES(avg_quantity), sample_count=VALUES(sample_count)`,
+         ON CONFLICT (product_name, day_type, time_slot) DO UPDATE SET avg_quantity=EXCLUDED.avg_quantity, sample_count=EXCLUDED.sample_count`,
         [r.productName, r.dayType, r.timeSlot, r.avgQuantity, r.sampleCount]
       );
     }
