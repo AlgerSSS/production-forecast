@@ -52,6 +52,7 @@ export async function POST(req: NextRequest) {
     let temperature = 0.1;
     let topP = 0.85;
 
+    // Hardcoded fallback prompt (used when DB prompt is disabled or fails)
     const reviewPromptBody = `你是马来西亚烘焙店的运营分析师。以下是今天的完整经营数据，请完成两项任务：
 
 【任务一：今日复盘】
@@ -101,11 +102,14 @@ ${JSON.stringify(feedData, null, 2)}
     if (USE_DB_PROMPT) {
       try {
         const vars: Record<string, string> = {
+          feedData: JSON.stringify(feedData, null, 2),
+          tomorrowDate: tomorrow,
+          tomorrowDayType: dayTypeLabels[tomorrowDayType] || tomorrowDayType,
           eventsInfo: tomorrowEventsStr,
         };
         const built = await buildPrompt("daily_review", vars);
         systemInstruction = built.systemInstruction;
-        prompt = reviewPromptBody;
+        prompt = built.prompt;
         modelName = built.model;
         temperature = built.temperature;
         topP = built.topP;

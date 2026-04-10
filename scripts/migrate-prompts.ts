@@ -2,15 +2,18 @@
  * Prompt迁移脚本：将现有3个AI路由中的硬编码prompt拆解为数据库中的积木块
  * 执行：npx tsx scripts/migrate-prompts.ts
  */
-import "dotenv/config";
+import dotenv from "dotenv";
+import path from "path";
 import postgres from "postgres";
+
+dotenv.config({ path: path.join(process.cwd(), ".env.local") });
 
 const url = process.env.DATABASE_URL;
 if (!url) {
   console.error("DATABASE_URL not set");
   process.exit(1);
 }
-const sql = postgres(url);
+const sql = postgres(url, { ssl: "require" });
 
 interface Segment {
   segment_key: string;
@@ -349,6 +352,97 @@ suggestions 数组中，只需要包含数量>0的记录。每个产品至少有
     variables: "timeslotContext",
     sort_order: 6,
   },
+
+  // --- Daily review & Empowerment review segments ---
+  {
+    segment_key: "role.empowerment_analyst",
+    category: "role",
+    title: "角色-赋能分析师",
+    content: "你是烘焙店的市场/营运分析师，擅长ROI分析和归因。只返回JSON。",
+    variables: "",
+    sort_order: 5,
+  },
+  {
+    segment_key: "knowledge.review_focus",
+    category: "knowledge",
+    title: "复盘分析要点",
+    content: `【复盘分析要点】
+1. 营业额达成情况及原因分析
+2. 断货产品的损失评估（哪些产品断货最严重，损失了多少）
+3. 哪些产品表现超预期/低于预期
+4. 时段销售分布是否合理（是否有某时段供应不足）
+5. 外部事件（天气/活动/竞品）对今天的实际影响`,
+    variables: "",
+    sort_order: 11,
+  },
+  {
+    segment_key: "context.feed_data",
+    category: "context",
+    title: "今日经营数据",
+    content: `【今日数据】\n\${feedData}`,
+    variables: "feedData",
+    sort_order: 7,
+  },
+  {
+    segment_key: "context.tomorrow_info",
+    category: "context",
+    title: "明日已知信息",
+    content: `【明日已知信息】\n- 日期：\${tomorrowDate}\n- 日期类型：\${tomorrowDayType}\n- 已录入事件：\${eventsInfo}`,
+    variables: "tomorrowDate,tomorrowDayType,eventsInfo",
+    sort_order: 8,
+  },
+  {
+    segment_key: "context.empowerment_event",
+    category: "context",
+    title: "赋能活动信息",
+    content: `【赋能活动信息】\n\${eventInfo}`,
+    variables: "eventInfo",
+    sort_order: 9,
+  },
+  {
+    segment_key: "context.sales_comparison",
+    category: "context",
+    title: "基线/活动期/后效期销售数据",
+    content: `【基线数据（活动前2周平均日销量）】\n\${baselineSales}\n\n【活动期间数据（平均日销量）】\n\${periodSales}\n\n【活动后1周数据（平均日销量）】\n\${afterSales}`,
+    variables: "baselineSales,periodSales,afterSales",
+    sort_order: 10,
+  },
+  {
+    segment_key: "rule.review_tasks",
+    category: "rule",
+    title: "复盘两项任务定义",
+    content: `【任务一：今日复盘】
+分析今天的经营表现，重点关注营业额达成、断货损失、超预期/低于预期产品、时段分布、外部事件影响。
+
+【任务二：明日预估调整建议】
+基于今天的复盘和明天的已知信息（日期类型、已录入事件），输出：
+1. 明日整体营业额系数建议（相对基线的调整）
+2. 需要增产的产品及建议增幅
+3. 需要减产的产品及建议减幅
+4. 分时段调整建议（如某产品应提前/延后出货）`,
+    variables: "",
+    sort_order: 5,
+  },
+  {
+    segment_key: "format.empowerment_review",
+    category: "format",
+    title: "赋能复盘JSON输出格式",
+    content: `请输出JSON：
+{
+  "roi": {
+    "revenueIncrease": 5000,
+    "costEfficiency": 2.5,
+    "rating": "高效/一般/低效"
+  },
+  "productImpact": [
+    {"product": "蛋挞", "beforeAvg": 150, "duringAvg": 185, "changeRate": "+23%", "confidence": "高"}
+  ],
+  "insights": ["洞察1"],
+  "recommendations": ["建议1"]
+}`,
+    variables: "",
+    sort_order: 5,
+  },
 ];
 
 // ========== Prompt Templates ==========
@@ -384,7 +478,16 @@ const templates: Template[] = [
     template_key: "daily_review",
     title: "每日复盘",
     system_instruction_key: "role.review_analyst",
-    segment_keys: "context.events,knowledge.payday_cycle,knowledge.day_type_base,format.daily_review",
+    segment_keys: "rule.review_tasks,knowledge.review_focus,context.feed_data,context.tomorrow_info,context.events,knowledge.payday_cycle,knowledge.day_type_base,format.daily_review",
+    model: "gemini-2.5-flash",
+    temperature: 0.1,
+    top_p: 0.85,
+  },
+  {
+    template_key: "empowerment_review",
+    title: "赋能复盘",
+    system_instruction_key: "role.empowerment_analyst",
+    segment_keys: "context.empowerment_event,context.sales_comparison,format.empowerment_review",
     model: "gemini-2.5-flash",
     temperature: 0.1,
     top_p: 0.85,

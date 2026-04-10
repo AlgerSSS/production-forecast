@@ -1,7 +1,10 @@
 import { NextRequest, NextResponse } from "next/server";
 import { GoogleGenerativeAI } from "@google/generative-ai";
 import { query } from "@/lib/db";
+import { buildPrompt } from "@/lib/engine/prompt-engine";
 import { generateWithRetry } from "@/lib/gemini-retry";
+
+const USE_DB_PROMPT = process.env.USE_DB_PROMPT !== "false";
 
 export async function POST(req: NextRequest) {
   try {
@@ -66,14 +69,18 @@ export async function POST(req: NextRequest) {
     const periodSales = Object.fromEntries(Object.entries(during).map(([k, v]) => [k, avg(v)]));
     const afterSales = Object.fromEntries(Object.entries(after).map(([k, v]) => [k, avg(v)]));
 
-    const prompt = `你是烘焙店的市场/营运分析师。请分析以下赋能活动的效果。
-
-【赋能活动信息】
-- 活动名称：${event.event_name}
+    // Build event info text
+    const eventInfoText = `- 活动名称：${event.event_name}
 - 类型：${event.event_type === "market" ? "市场赋能" : "营运赋能"}
 - 时间：${event.start_date} ~ ${event.end_date}
 - 关联产品：${event.target_products || "全部"}
-${event.event_type === "market" ? `- 平台：${event.platform}\n- 曝光数据：${event.exposure_count}次曝光，${event.click_count}次点击\n- 投入费用：RM ${event.cost}` : `- 营运类型：${event.operation_type}\n- 详情：${event.operation_detail}`}
+${event.event_type === "market" ? `- 平台：${event.platform}\n- 曝光数据：${event.exposure_count}次曝光，${event.click_count}次点击\n- 投入费用：RM ${event.cost}` : `- 营运类型：${event.operation_type}\n- 详情：${event.operation_detail}`}`;
+
+    // Hardcoded fallback prompt
+    const fallbackPrompt = `你是烘焙店的市场/营运分析师。请分析以下赋能活动的效果。
+
+【赋能活动信息】
+${eventInfoText}
 
 【基线数据（活动前2周平均日销量）】
 ${JSON.stringify(baselineSales)}
@@ -98,11 +105,36 @@ ${JSON.stringify(afterSales)}
   "recommendations": ["建议1"]
 }`;
 
+    let systemInstruction = "你是烘焙店的市场/营运分析师，擅长ROI分析和归因。只返回JSON。";
+    let prompt = fallbackPrompt;
+    let modelName = "gemini-2.5-flash";
+    let temperature = 0.1;
+    let topP = 0.85;
+
+    if (USE_DB_PROMPT) {
+      try {
+        const vars: Record<string, string> = {
+          eventInfo: eventInfoText,
+          baselineSales: JSON.stringify(baselineSales),
+          periodSales: JSON.stringify(periodSales),
+          afterSales: JSON.stringify(afterSales),
+        };
+        const built = await buildPrompt("empowerment_review", vars);
+        systemInstruction = built.systemInstruction;
+        prompt = built.prompt;
+        modelName = built.model;
+        temperature = built.temperature;
+        topP = built.topP;
+      } catch (e) {
+        console.warn("buildPrompt failed for empowerment_review, using fallback:", e);
+      }
+    }
+
     const genAI = new GoogleGenerativeAI(apiKey);
     const model = genAI.getGenerativeModel({
-      model: "gemini-2.5-flash",
-      systemInstruction: "你是烘焙店的市场/营运分析师，擅长ROI分析和归因。只返回JSON。",
-      generationConfig: { temperature: 0.1, topP: 0.85, responseMimeType: "application/json" },
+      model: modelName,
+      systemInstruction,
+      generationConfig: { temperature, topP, responseMimeType: "application/json" },
     });
 
     const text = await generateWithRetry(model, prompt);
