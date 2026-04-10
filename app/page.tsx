@@ -148,6 +148,7 @@ export default function Home() {
   const [trendData, setTrendData] = useState<{ product_name: string; date: string; day_of_week: number; total_qty: number }[]>([]);
   const [trendLoading, setTrendLoading] = useState(false);
   const [trendDropdownOpen, setTrendDropdownOpen] = useState(false);
+  const [trendDayTypeFilter, setTrendDayTypeFilter] = useState<"monThu" | "friday" | "weekend">("monThu");
 
   const [year, setYear] = useState(2026);
   const [selectedMonth, setSelectedMonth] = useState(4);
@@ -2168,16 +2169,26 @@ export default function Home() {
               return (
                 <>
                   <div className="bg-white rounded-3xl shadow-[0_4px_40px_rgba(0,0,0,0.03)] p-8">
-                    <h3 className="text-md font-semibold text-[#1F2937] mb-4">销量趋势图</h3>
-                    <div className="flex gap-4 mb-3 text-xs">
-                      {Object.entries(dayTypeLabel).map(([key, label]) => (
-                        <span key={key} className="flex items-center gap-1">
-                          <span className="w-3 h-3 rounded-full inline-block" style={{ backgroundColor: dayTypeColor[key] }} />
-                          {label}
-                        </span>
-                      ))}
+                    <div className="flex items-center justify-between mb-4">
+                      <h3 className="text-md font-semibold text-[#1F2937]">销量趋势图 — {dayTypeLabel[trendDayTypeFilter]}</h3>
+                      <div className="flex gap-1 bg-gray-100 rounded-full p-1">
+                        {(["monThu", "friday", "weekend"] as const).map((key) => (
+                          <button
+                            key={key}
+                            onClick={() => setTrendDayTypeFilter(key)}
+                            className={`px-3 py-1 rounded-full text-xs font-medium transition-all duration-200 ${
+                              trendDayTypeFilter === key
+                                ? "text-white shadow-sm"
+                                : "text-[#6B7280] hover:text-[#1F2937]"
+                            }`}
+                            style={trendDayTypeFilter === key ? { backgroundColor: dayTypeColor[key] } : undefined}
+                          >
+                            {dayTypeLabel[key]}
+                          </button>
+                        ))}
+                      </div>
                     </div>
-                    <TrendChart data={chartData} productNames={trendSelectedProducts} colors={COLORS} dayTypeColor={dayTypeColor} />
+                    <TrendChart data={chartData.filter((d) => d.dayType === trendDayTypeFilter)} productNames={trendSelectedProducts} colors={COLORS} dayTypeColor={dayTypeColor} />
                   </div>
                   <div className="bg-white rounded-3xl shadow-[0_4px_40px_rgba(0,0,0,0.03)] p-8">
                     <h3 className="text-md font-semibold text-[#1F2937] mb-4">按日型分类平均销量</h3>
