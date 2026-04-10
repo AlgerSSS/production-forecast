@@ -499,6 +499,13 @@ async function calculateHistoricalTrendFactors(
     // 往前看60天的历史数据
     const lookbackStart = new Date(year, month - 1, -59).toISOString().slice(0, 10);
 
+    // 优先从 daily_revenue 读取历史营业额
+    const revenueRows = await query<{ date: string; revenue: number }>(
+      "SELECT date, revenue FROM daily_revenue WHERE date >= ? AND date < ?",
+      [lookbackStart, monthStart]
+    );
+    const revenueMap = new Map(revenueRows.map((r) => [r.date, r.revenue]));
+
     const dailySales = await query<{ date: string; total: number }>(
       `SELECT date, SUM(quantity) as total FROM daily_sales_record
        WHERE date >= ? AND date < ?
@@ -506,20 +513,36 @@ async function calculateHistoricalTrendFactors(
       [lookbackStart, monthStart]
     );
 
-    if (dailySales.length < 14) return {}; // 数据不足，不调整
-
-    // 读取产品价格
+    // 合并：有 daily_revenue 的日期用 revenue，否则用销量×均价
+    // 读取产品价格（仅在需要 fallback 时使用）
     const products = await query<{ name: string; price: number }>("SELECT name, price FROM product");
     const avgPrice = products.length > 0
       ? products.reduce((s, p) => s + p.price, 0) / products.length
       : 10;
 
+    // 收集所有日期的营业额
+    const allDates = new Set<string>();
+    for (const r of revenueRows) allDates.add(r.date);
+    for (const d of dailySales) allDates.add(d.date);
+
+    const dailyRevenueMap = new Map<string, number>();
+    const salesMap = new Map(dailySales.map((d) => [d.date, d.total]));
+    for (const date of allDates) {
+      if (revenueMap.has(date)) {
+        dailyRevenueMap.set(date, revenueMap.get(date)!);
+      } else if (salesMap.has(date)) {
+        dailyRevenueMap.set(date, salesMap.get(date)! * avgPrice);
+      }
+    }
+
+    if (dailyRevenueMap.size < 14) return {}; // 数据不足，不调整
+
     // 按星期几分组计算平均营业额
     const dowSales: Record<number, number[]> = {};
-    for (const d of dailySales) {
-      const dow = new Date(d.date + "T00:00:00").getDay();
+    for (const [date, revenue] of dailyRevenueMap) {
+      const dow = new Date(date + "T00:00:00").getDay();
       if (!dowSales[dow]) dowSales[dow] = [];
-      dowSales[dow].push(d.total * avgPrice);
+      dowSales[dow].push(revenue);
     }
 
     const dowAvg: Record<number, number> = {};
@@ -1100,8 +1123,34 @@ export async function deleteEmpowermentEvent(id: number): Promise<void> {
   await execute("DELETE FROM empowerment_event WHERE id = ?", [id]);
 }
 
+// ========== Daily Revenue Actions ==========
+export async function upsertDailyRevenue(date: string, revenue: number): Promise<void> {
+  await execute(
+    `INSERT INTO daily_revenue (date, revenue) VALUES (?, ?)
+     ON CONFLICT (date) DO UPDATE SET revenue = EXCLUDED.revenue`,
+    [date, revenue]
+  );
+}
+
+export async function getDailyRevenues(startDate: string, endDate: string): Promise<{ date: string; revenue: number }[]> {
+  return query<{ date: string; revenue: number }>(
+    "SELECT date, revenue FROM daily_revenue WHERE date >= ? AND date <= ? ORDER BY date",
+    [startDate, endDate]
+  );
+}
+
 // ========== Dashboard: 昨日实际销售额 ==========
 export async function getDailySalesTotal(date: string): Promise<number> {
+  // 优先从 daily_revenue 读取
+  const revenueRows = await query<{ revenue: number }>(
+    "SELECT revenue FROM daily_revenue WHERE date = ?",
+    [date]
+  );
+  if (revenueRows.length > 0) {
+    return Math.round(revenueRows[0].revenue);
+  }
+
+  // fallback: 销量 × 单价
   const rows = await query<{ product_name: string; qty: number }>(
     `SELECT standard_name as product_name, SUM(quantity) as qty FROM daily_sales_record WHERE date = ? GROUP BY standard_name`,
     [date]

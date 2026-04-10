@@ -190,6 +190,13 @@ CREATE TABLE IF NOT EXISTS prompt_template (
   CONSTRAINT uk_template_key UNIQUE (template_key)
 );
 
+-- 每日营业额（直接录入，优先于销量×单价计算）
+CREATE TABLE IF NOT EXISTS daily_revenue (
+  date VARCHAR(10) NOT NULL,
+  revenue DOUBLE PRECISION NOT NULL DEFAULT 0,
+  CONSTRAINT uk_daily_revenue_date UNIQUE (date)
+);
+
 -- 赋能事件表（市场/营运赋能复盘）
 CREATE TABLE IF NOT EXISTS empowerment_event (
   id SERIAL PRIMARY KEY,
