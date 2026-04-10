@@ -39,6 +39,20 @@ export async function POST(req: NextRequest) {
       ? tomorrowEvents.map((e) => `[${e.event_tag}] ${e.description}`).join("; ")
       : "无已录入事件";
 
+    // 读取今日和明日的节日信息
+    const holidays = await query<{ date: string; name: string; type: string; note: string }>(
+      "SELECT date, name, type, note FROM holiday WHERE date IN (?, ?) ORDER BY date",
+      [feedData.date, tomorrow]
+    );
+    const todayHoliday = holidays.filter((h) => h.date === feedData.date);
+    const tomorrowHoliday = holidays.filter((h) => h.date === tomorrow);
+    const todayHolidayStr = todayHoliday.length > 0
+      ? todayHoliday.map((h) => `[${h.type}] ${h.name}${h.note ? `（${h.note}）` : ""}`).join("; ")
+      : "无";
+    const tomorrowHolidayStr = tomorrowHoliday.length > 0
+      ? tomorrowHoliday.map((h) => `[${h.type}] ${h.name}${h.note ? `（${h.note}）` : ""}`).join("; ")
+      : "无";
+
     // 构建prompt
     const dayTypeLabels: Record<string, string> = {
       mondayToThursday: "周中(周一至周四)",
@@ -73,10 +87,16 @@ export async function POST(req: NextRequest) {
 【今日数据】
 ${JSON.stringify(feedData, null, 2)}
 
+【今日节日信息（来自数据库，请严格基于此数据分析，不要编造节日）】
+${todayHolidayStr}
+
 【明日已知信息】
 - 日期：${tomorrow}
 - 日期类型：${dayTypeLabels[tomorrowDayType] || tomorrowDayType}
 - 已录入事件：${tomorrowEventsStr}
+- 节日信息：${tomorrowHolidayStr}
+
+重要提示：分析时只能引用上面提供的节日和事件数据，不要自行编造或假设任何节日、活动信息。
 
 请严格返回JSON格式：
 {
@@ -106,6 +126,8 @@ ${JSON.stringify(feedData, null, 2)}
           tomorrowDate: tomorrow,
           tomorrowDayType: dayTypeLabels[tomorrowDayType] || tomorrowDayType,
           eventsInfo: tomorrowEventsStr,
+          todayHoliday: todayHolidayStr,
+          tomorrowHoliday: tomorrowHolidayStr,
         };
         const built = await buildPrompt("daily_review", vars);
         systemInstruction = built.systemInstruction;
