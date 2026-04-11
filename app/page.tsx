@@ -1250,45 +1250,39 @@ export default function Home() {
 
   return (
     <div className="min-h-screen flex flex-col">
-      {/* Header */}
-      <header className="pt-10 pb-2 px-4">
-        <div className="max-w-6xl mx-auto flex items-center justify-between">
-          <h1 className="text-[28px] font-semibold text-[#1d1d1f] tracking-[-0.02em] leading-tight">
-            排产预估系统
-          </h1>
-          <div className="flex items-center gap-3 text-sm text-[#86868b]">
-            <span className="font-medium text-[#1d1d1f]">{year}年</span>
+      {/* Apple-style Top Navigation Bar */}
+      <nav className="sticky top-0 z-40 h-12 bg-[rgba(0,0,0,0.8)] backdrop-blur-xl backdrop-saturate-[180%]">
+        <div className="max-w-6xl mx-auto h-full px-4 flex items-center justify-between">
+          <span className="text-[13px] font-medium text-white/90 tracking-[-0.01em]">排产预估</span>
+          <div className="flex items-center gap-1">
+            {TABS.map((tab) => (
+              <button
+                key={tab.id}
+                onClick={() => setActiveTab(tab.id)}
+                className={`px-3 py-1 text-[12px] font-normal rounded-sm transition-all duration-200 ${
+                  activeTab === tab.id
+                    ? "text-white"
+                    : "text-white/60 hover:text-white"
+                }`}
+              >
+                {tab.label}
+              </button>
+            ))}
+          </div>
+          <div className="flex items-center gap-2 text-[12px] text-white/60">
+            <span className="text-white/90">{year}年</span>
             <select
               value={selectedMonth}
               onChange={(e) => setSelectedMonth(Number(e.target.value))}
-              className="bg-white border-0 rounded-lg px-3 py-1.5 text-sm text-[#1d1d1f] shadow-sm focus:ring-2 focus:ring-[#0071e3] focus:outline-none transition-all duration-200"
+              className="bg-white/10 border-0 rounded-md px-2 py-1 text-[12px] text-white/90 focus:ring-1 focus:ring-white/30 focus:outline-none transition-all duration-200 appearance-none cursor-pointer"
             >
               {Array.from({ length: 12 }, (_, i) => (
-                <option key={i + 1} value={i + 1}>
+                <option key={i + 1} value={i + 1} className="bg-[#1d1d1f] text-white">
                   {i + 1}月
                 </option>
               ))}
             </select>
           </div>
-        </div>
-      </header>
-
-      {/* Floating Pill Tab Navigation */}
-      <nav className="py-4 px-4 sticky top-0 z-40">
-        <div className="max-w-fit mx-auto bg-[rgba(0,0,0,0.8)] backdrop-blur-xl backdrop-saturate-[180%] rounded-full p-1.5 flex gap-1">
-          {TABS.map((tab) => (
-            <button
-              key={tab.id}
-              onClick={() => setActiveTab(tab.id)}
-              className={`px-5 py-2 text-sm font-medium rounded-full transition-all duration-300 ${
-                activeTab === tab.id
-                  ? "bg-white/20 text-white shadow-sm"
-                  : "text-white/60 hover:text-white hover:bg-white/10"
-              }`}
-            >
-              {tab.label}
-            </button>
-          ))}
         </div>
       </nav>
 
@@ -2927,12 +2921,42 @@ function TrendChart({ data, productNames, colors, dayTypeColor }: {
     return <Dot cx={cx} cy={cy} r={4} fill={dayTypeColor[dt] || "#ccc"} stroke="#fff" strokeWidth={1} />;
   };
 
+  // Auto-detect if we need dual Y-axes: split products into "large" and "small" groups
+  const maxByProduct: Record<string, number> = {};
+  for (const name of productNames) {
+    let mx = 0;
+    for (const row of data) {
+      const v = Number(row[name]) || 0;
+      if (v > mx) mx = v;
+    }
+    maxByProduct[name] = mx;
+  }
+  const allMaxes = Object.values(maxByProduct);
+  const globalMax = Math.max(...allMaxes, 1);
+  // If the largest product is >5x the median, use dual axes
+  const sorted = [...allMaxes].sort((a, b) => a - b);
+  const median = sorted[Math.floor(sorted.length / 2)] || 1;
+  const needDualAxis = productNames.length >= 2 && globalMax > median * 5;
+
+  const rightAxisProducts = new Set<string>();
+  if (needDualAxis) {
+    // Products whose max > median * 3 go to the right axis
+    for (const name of productNames) {
+      if (maxByProduct[name] > median * 3) rightAxisProducts.add(name);
+    }
+    // If all ended up on right, don't split
+    if (rightAxisProducts.size === productNames.length) rightAxisProducts.clear();
+  }
+
   return (
     <ResponsiveContainer width="100%" height={400}>
-      <LineChart data={data} margin={{ top: 5, right: 30, left: 0, bottom: 5 }}>
+      <LineChart data={data} margin={{ top: 5, right: rightAxisProducts.size > 0 ? 60 : 30, left: 0, bottom: 5 }}>
         <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" />
         <XAxis dataKey="date" tick={{ fontSize: 11 }} />
-        <YAxis tick={{ fontSize: 11 }} />
+        <YAxis yAxisId="left" tick={{ fontSize: 11 }} />
+        {rightAxisProducts.size > 0 && (
+          <YAxis yAxisId="right" orientation="right" tick={{ fontSize: 11 }} stroke="#86868b" />
+        )}
         <Tooltip
           contentStyle={{ borderRadius: 12, border: "none", boxShadow: "0 4px 20px rgba(0,0,0,0.08)" }}
           labelFormatter={(label, payload) => {
@@ -2951,6 +2975,7 @@ function TrendChart({ data, productNames, colors, dayTypeColor }: {
             key={name}
             type="monotone"
             dataKey={name}
+            yAxisId={rightAxisProducts.has(name) ? "right" : "left"}
             stroke={colors[i % colors.length]}
             strokeWidth={2}
             dot={renderDot}
