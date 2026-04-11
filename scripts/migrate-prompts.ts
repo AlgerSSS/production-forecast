@@ -286,7 +286,8 @@ suggestions 数组中，只需要包含数量>0的记录。每个产品至少有
     "highlights": ["亮点1", "亮点2"],
     "painPoints": ["痛点1", "痛点2"],
     "stockoutAnalysis": [{"product": "xxx", "lossQty": 10, "lossAmount": 50, "suggestion": "明日增产20%"}],
-    "timeslotInsights": ["时段洞察1"]
+    "timeslotInsights": ["时段洞察1"],
+    "transactionAnalysis": "客单数/客单价对比历史的分析（如有客单数据则必填，无则留空字符串）"
   },
   "tomorrowSuggestions": {
     "overallCoefficientAdjust": 1.05,
@@ -368,10 +369,11 @@ suggestions 数组中，只需要包含数量>0的记录。每个产品至少有
     title: "复盘分析要点",
     content: `【复盘分析要点】
 1. 营业额达成情况及原因分析
-2. 断货产品的损失评估（哪些产品断货最严重，损失了多少）
-3. 哪些产品表现超预期/低于预期
-4. 时段销售分布是否合理（是否有某时段供应不足）
-5. 外部事件（天气/活动/竞品）对今天的实际影响`,
+2. 客单数/客单价拆解分析（营业额=客单数×客单价，判断是客流还是消费力变化）
+3. 断货产品的损失评估（哪些产品断货最严重，损失了多少）
+4. 哪些产品表现超预期/低于预期
+5. 时段销售分布是否合理（是否有某时段供应不足）
+6. 外部事件（天气/活动/竞品）对今天的实际影响`,
     variables: "",
     sort_order: 11,
   },
@@ -387,8 +389,8 @@ suggestions 数组中，只需要包含数量>0的记录。每个产品至少有
     segment_key: "context.tomorrow_info",
     category: "context",
     title: "明日已知信息",
-    content: `【明日已知信息】\n- 日期：\${tomorrowDate}\n- 日期类型：\${tomorrowDayType}\n- 已录入事件：\${eventsInfo}`,
-    variables: "tomorrowDate,tomorrowDayType,eventsInfo",
+    content: `【今日节日信息（来自数据库，请严格基于此数据分析，不要编造节日）】\n\${todayHoliday}\n\n【明日已知信息】\n- 日期：\${tomorrowDate}\n- 日期类型：\${tomorrowDayType}\n- 已录入事件：\${eventsInfo}\n- 节日信息：\${tomorrowHoliday}\n\n重要提示：分析时只能引用上面提供的节日和事件数据，不要自行编造或假设任何节日、活动信息。`,
+    variables: "tomorrowDate,tomorrowDayType,eventsInfo,todayHoliday,tomorrowHoliday",
     sort_order: 8,
   },
   {
@@ -436,6 +438,30 @@ suggestions 数组中，只需要包含数量>0的记录。每个产品至少有
     content: `【TOP产品近期销售趋势（按日型分类均值）】\n\${productTrendData}`,
     variables: "productTrendData",
     sort_order: 12,
+  },
+  {
+    segment_key: "context.transaction_comparison",
+    category: "context",
+    title: "今日vs历史客单对比",
+    content: `\${transactionComparison}`,
+    variables: "transactionComparison",
+    sort_order: 13,
+  },
+  {
+    segment_key: "context.weather",
+    category: "context",
+    title: "天气状况",
+    content: `【天气状况】\n\${weatherCondition}`,
+    variables: "weatherCondition",
+    sort_order: 14,
+  },
+  {
+    segment_key: "context.special_notes",
+    category: "context",
+    title: "特别备注",
+    content: `【特别备注】\n\${specialNotes}`,
+    variables: "specialNotes",
+    sort_order: 15,
   },
   {
     segment_key: "rule.review_tasks",
@@ -508,7 +534,7 @@ const templates: Template[] = [
     template_key: "daily_review",
     title: "每日复盘",
     system_instruction_key: "role.review_analyst",
-    segment_keys: "rule.review_tasks,knowledge.review_focus,knowledge.transaction_analysis,context.feed_data,context.transaction_data,context.product_trend,context.tomorrow_info,context.events,knowledge.payday_cycle,knowledge.day_type_base,format.daily_review",
+    segment_keys: "rule.review_tasks,knowledge.review_focus,knowledge.transaction_analysis,context.feed_data,context.transaction_data,context.product_trend,context.transaction_comparison,context.weather,context.special_notes,context.tomorrow_info,context.events,knowledge.payday_cycle,knowledge.day_type_base,format.daily_review",
     model: "gemini-2.5-flash",
     temperature: 0.1,
     top_p: 0.85,
