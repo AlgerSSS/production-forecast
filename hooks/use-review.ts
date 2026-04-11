@@ -3,7 +3,7 @@
 import { useState, useCallback } from "react";
 import { useForecastContext } from "@/components/providers/forecast-provider";
 import {
-  saveOutOfStockRecords, deleteOutOfStockByDate, adoptDailyReview,
+  saveOutOfStockRecords, deleteOutOfStockByDate, adoptDailyReview, upsertDailyRevenue,
 } from "@/lib/actions";
 import { parseStockoutLine, calculateLossSlots, calculateStockoutLoss } from "@/lib/engine/forecast-engine";
 import type { OutOfStockRecord, DailyReviewResult } from "@/lib/types";
@@ -47,10 +47,14 @@ export function useReview() {
         await deleteOutOfStockByDate(reviewDate);
         await saveOutOfStockRecords(enriched);
       }
+      const actualRevenue = Number(reviewActualRevenue) || 0;
+      if (actualRevenue > 0) {
+        await upsertDailyRevenue(reviewDate, actualRevenue);
+      }
       const res = await fetch("/api/daily-review", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ feedData: { date: reviewDate, actualRevenue: Number(reviewActualRevenue) || 0, stockoutRecords: parsedStockouts } }),
+        body: JSON.stringify({ feedData: { date: reviewDate, actualRevenue, stockoutRecords: parsedStockouts } }),
       });
       const data = await res.json();
       if (res.ok) { setReviewResult(data); showToast("AI 复盘完成", "success"); }
