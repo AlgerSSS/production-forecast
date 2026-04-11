@@ -622,7 +622,7 @@ export default function Home() {
 
       // Colors
       const headerFill = { type: "pattern" as const, pattern: "solid" as const, fgColor: { argb: "FFF3F4F6" } };
-      const fixedSlotFill = { type: "pattern" as const, pattern: "solid" as const, fgColor: { argb: "FFF7E1E2" } };
+      const fixedSlotFill = { type: "pattern" as const, pattern: "solid" as const, fgColor: { argb: "FF0071E3" } };
       const sumRowFill = { type: "pattern" as const, pattern: "solid" as const, fgColor: { argb: "FFFCE4E5" } };
       const salesRowFill = { type: "pattern" as const, pattern: "solid" as const, fgColor: { argb: "FFEFF6FF" } };
       const remainRowFill = { type: "pattern" as const, pattern: "solid" as const, fgColor: { argb: "FFF9FAFB" } };
@@ -1251,17 +1251,17 @@ export default function Home() {
   return (
     <div className="min-h-screen flex flex-col">
       {/* Header */}
-      <header className="pt-8 pb-2 px-4">
+      <header className="pt-10 pb-2 px-4">
         <div className="max-w-6xl mx-auto flex items-center justify-between">
-          <h1 className="text-2xl font-bold text-[#1F2937] tracking-tight">
+          <h1 className="text-[28px] font-semibold text-[#1d1d1f] tracking-[-0.02em] leading-tight">
             排产预估系统
           </h1>
-          <div className="flex items-center gap-3 text-sm text-[#9CA3AF]">
-            <span className="font-medium text-[#1F2937]">{year}年</span>
+          <div className="flex items-center gap-3 text-sm text-[#86868b]">
+            <span className="font-medium text-[#1d1d1f]">{year}年</span>
             <select
               value={selectedMonth}
               onChange={(e) => setSelectedMonth(Number(e.target.value))}
-              className="bg-white border-0 rounded-xl px-3 py-1.5 text-sm text-[#1F2937] shadow-sm focus:ring-2 focus:ring-[#F7E1E2] focus:outline-none transition-all duration-200"
+              className="bg-white border-0 rounded-lg px-3 py-1.5 text-sm text-[#1d1d1f] shadow-sm focus:ring-2 focus:ring-[#0071e3] focus:outline-none transition-all duration-200"
             >
               {Array.from({ length: 12 }, (_, i) => (
                 <option key={i + 1} value={i + 1}>
@@ -1274,16 +1274,16 @@ export default function Home() {
       </header>
 
       {/* Floating Pill Tab Navigation */}
-      <nav className="py-4 px-4">
-        <div className="max-w-fit mx-auto bg-white rounded-full shadow-[0_2px_20px_rgba(0,0,0,0.06)] p-1.5 flex gap-1">
+      <nav className="py-4 px-4 sticky top-0 z-40">
+        <div className="max-w-fit mx-auto bg-[rgba(0,0,0,0.8)] backdrop-blur-xl backdrop-saturate-[180%] rounded-full p-1.5 flex gap-1">
           {TABS.map((tab) => (
             <button
               key={tab.id}
               onClick={() => setActiveTab(tab.id)}
               className={`px-5 py-2 text-sm font-medium rounded-full transition-all duration-300 ${
                 activeTab === tab.id
-                  ? "bg-[#F7E1E2] text-[#1F2937] shadow-sm"
-                  : "text-[#9CA3AF] hover:text-[#1F2937] hover:bg-gray-50"
+                  ? "bg-white/20 text-white shadow-sm"
+                  : "text-white/60 hover:text-white hover:bg-white/10"
               }`}
             >
               {tab.label}
@@ -1295,7 +1295,7 @@ export default function Home() {
       {/* Loading indicator */}
       {loading && (
         <div className="max-w-6xl mx-auto px-4">
-          <div className="bg-[#F7E1E2]/40 rounded-2xl px-4 py-2.5 text-sm text-[#1F2937] text-center font-medium">
+          <div className="bg-[#0071e3]/10 rounded-xl px-4 py-2.5 text-sm text-[#0071e3] text-center font-medium">
             处理中...
           </div>
         </div>
@@ -1309,15 +1309,15 @@ export default function Home() {
           <div className="space-y-6 animate-fade-slide-up">
             {/* Summary Cards */}
             <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-              <div className="bg-white rounded-3xl shadow-[0_4px_40px_rgba(0,0,0,0.03)] p-6">
-                <p className="text-xs text-[#9CA3AF] mb-1">昨日营业额</p>
-                <p className="text-xl font-bold text-[#1F2937]">
+              <div className="bg-white rounded-2xl shadow-[0_2px_12px_rgba(0,0,0,0.08)] p-6">
+                <p className="text-xs text-[#86868b] mb-1">昨日营业额</p>
+                <p className="text-xl font-bold text-[#1d1d1f]">
                   {yesterdaySales !== null ? (yesterdaySales > 0 ? `RM ${yesterdaySales.toLocaleString()}` : "暂无数据") : "—"}
                 </p>
               </div>
-              <div className="bg-white rounded-3xl shadow-[0_4px_40px_rgba(0,0,0,0.03)] p-6">
-                <p className="text-xs text-[#9CA3AF] mb-1">昨日达成率</p>
-                <p className="text-xl font-bold text-[#1F2937]">{(() => {
+              <div className="bg-white rounded-2xl shadow-[0_2px_12px_rgba(0,0,0,0.08)] p-6">
+                <p className="text-xs text-[#86868b] mb-1">昨日达成率</p>
+                <p className="text-xl font-bold text-[#1d1d1f]">{(() => {
                   if (yesterdaySales === null) return "—";
                   const yesterday = dayjs().subtract(1, "day").format("YYYY-MM-DD");
                   const yTarget = dailyTargets.find((d) => d.date === yesterday);
@@ -1326,9 +1326,9 @@ export default function Home() {
                   return `${rate}%`;
                 })()}</p>
               </div>
-              <div className="bg-white rounded-3xl shadow-[0_4px_40px_rgba(0,0,0,0.03)] p-6">
-                <p className="text-xs text-[#9CA3AF] mb-1">今日目标</p>
-                <p className="text-xl font-bold text-[#1F2937]">
+              <div className="bg-white rounded-2xl shadow-[0_2px_12px_rgba(0,0,0,0.08)] p-6">
+                <p className="text-xs text-[#86868b] mb-1">今日目标</p>
+                <p className="text-xl font-bold text-[#1d1d1f]">
                   {(() => {
                     const today = dayjs().format("YYYY-MM-DD");
                     const todayTarget = dailyTargets.find((d) => d.date === today);
@@ -1336,9 +1336,9 @@ export default function Home() {
                   })()}
                 </p>
               </div>
-              <div className="bg-white rounded-3xl shadow-[0_4px_40px_rgba(0,0,0,0.03)] p-6">
-                <p className="text-xs text-[#9CA3AF] mb-1">今日出货</p>
-                <p className="text-xl font-bold text-[#1F2937]">
+              <div className="bg-white rounded-2xl shadow-[0_2px_12px_rgba(0,0,0,0.08)] p-6">
+                <p className="text-xs text-[#86868b] mb-1">今日出货</p>
+                <p className="text-xl font-bold text-[#1d1d1f]">
                   {(() => {
                     const today = dayjs().format("YYYY-MM-DD");
                     const todayTarget = dailyTargets.find((d) => d.date === today);
@@ -1350,9 +1350,9 @@ export default function Home() {
 
             {/* AI Review Summary */}
             {dashboardReview && (
-              <div className="bg-[#F7E1E2]/20 rounded-2xl p-6">
-                <h3 className="text-sm font-semibold text-[#1F2937] mb-3">AI 昨日复盘摘要</h3>
-                <p className="text-sm text-[#4B5563] mb-3">{dashboardReview.review?.summary || "暂无复盘数据"}</p>
+              <div className="bg-[#0071e3]/10 rounded-2xl p-6">
+                <h3 className="text-sm font-semibold text-[#1d1d1f] mb-3">AI 昨日复盘摘要</h3>
+                <p className="text-sm text-[#1d1d1f]/80 mb-3">{dashboardReview.review?.summary || "暂无复盘数据"}</p>
                 {dashboardReview.review?.highlights && dashboardReview.review.highlights.length > 0 && (
                   <div className="flex flex-wrap gap-2 mb-2">
                     {dashboardReview.review.highlights.map((h: string, i: number) => (
@@ -1370,7 +1370,7 @@ export default function Home() {
                 <div className="flex gap-3">
                   <button
                     onClick={() => setActiveTab("review")}
-                    className="text-xs text-[#6B7280] hover:text-[#1F2937] transition-colors"
+                    className="text-xs text-[#86868b] hover:text-[#1d1d1f] transition-colors"
                   >
                     查看完整复盘 →
                   </button>
@@ -1382,7 +1382,7 @@ export default function Home() {
                         setDashboardReview({ ...dashboardReview, adopted: true });
                         showToast("已采纳AI今日策略", "success");
                       }}
-                      className="text-xs bg-[#F7E1E2] text-[#1F2937] px-3 py-1 rounded-lg font-medium hover:bg-[#F7E1E2]/80 transition-colors"
+                      className="text-xs bg-[#0071e3] text-white px-3 py-1 rounded-lg font-medium hover:bg-[#0071e3]/90 transition-colors"
                     >
                       采纳AI今日策略 ✓
                     </button>
@@ -1392,8 +1392,8 @@ export default function Home() {
             )}
 
             {/* Today Events */}
-            <div className="bg-white rounded-3xl shadow-[0_4px_40px_rgba(0,0,0,0.03)] p-6">
-              <h3 className="text-sm font-semibold text-[#1F2937] mb-3">今日事件提醒</h3>
+            <div className="bg-white rounded-2xl shadow-[0_2px_12px_rgba(0,0,0,0.08)] p-6">
+              <h3 className="text-sm font-semibold text-[#1d1d1f] mb-3">今日事件提醒</h3>
               {dashboardEvents.length > 0 ? (
                 <div className="flex flex-wrap gap-2">
                   {dashboardEvents.map((e, i) => (
@@ -1403,35 +1403,35 @@ export default function Home() {
                   ))}
                 </div>
               ) : (
-                <p className="text-sm text-[#9CA3AF]">今日暂无事件</p>
+                <p className="text-sm text-[#86868b]">今日暂无事件</p>
               )}
               <button
                 onClick={() => { setActiveTab("calendar"); setSelectedCalendarDate(dayjs().format("YYYY-MM-DD")); }}
-                className="mt-3 text-xs text-[#6B7280] hover:text-[#1F2937] transition-colors"
+                className="mt-3 text-xs text-[#86868b] hover:text-[#1d1d1f] transition-colors"
               >
                 + 添加今日事件
               </button>
             </div>
 
             {/* Quick Actions */}
-            <div className="bg-white rounded-3xl shadow-[0_4px_40px_rgba(0,0,0,0.03)] p-6">
-              <h3 className="text-sm font-semibold text-[#1F2937] mb-3">快捷操作</h3>
+            <div className="bg-white rounded-2xl shadow-[0_2px_12px_rgba(0,0,0,0.08)] p-6">
+              <h3 className="text-sm font-semibold text-[#1d1d1f] mb-3">快捷操作</h3>
               <div className="flex gap-3">
                 <button
                   onClick={() => { setActiveTab("forecast"); setForecastStep("targets"); }}
-                  className="px-4 py-2 bg-[#F7E1E2] text-[#1F2937] rounded-xl text-sm font-medium hover:bg-[#F7E1E2]/80 transition-colors"
+                  className="px-4 py-2 bg-[#0071e3] text-white rounded-xl text-sm font-medium hover:bg-[#0071e3]/90 transition-colors"
                 >
                   生成今日排产单
                 </button>
                 <button
                   onClick={() => setActiveTab("review")}
-                  className="px-4 py-2 bg-gray-100 text-[#1F2937] rounded-xl text-sm font-medium hover:bg-gray-200 transition-colors"
+                  className="px-4 py-2 bg-gray-100 text-[#1d1d1f] rounded-xl text-sm font-medium hover:bg-gray-200 transition-colors"
                 >
                   录入昨日数据
                 </button>
                 <button
                   onClick={() => { setActiveTab("forecast"); setForecastStep("export"); }}
-                  className="px-4 py-2 bg-gray-100 text-[#1F2937] rounded-xl text-sm font-medium hover:bg-gray-200 transition-colors"
+                  className="px-4 py-2 bg-gray-100 text-[#1d1d1f] rounded-xl text-sm font-medium hover:bg-gray-200 transition-colors"
                 >
                   导出Excel
                 </button>
@@ -1444,7 +1444,7 @@ export default function Home() {
         {activeTab === "forecast" && (
           <div className="space-y-6 animate-fade-slide-up">
             {/* Step Indicator */}
-            <div className="bg-white rounded-3xl shadow-[0_4px_40px_rgba(0,0,0,0.03)] p-4">
+            <div className="bg-white rounded-2xl shadow-[0_2px_12px_rgba(0,0,0,0.08)] p-4">
               <div className="flex items-center justify-center gap-2">
                 {(["targets", "products", "timeslots", "export"] as const).map((step, i) => {
                   const labels = ["月/日目标", "单品建议", "分时段", "导出"];
@@ -1453,13 +1453,13 @@ export default function Home() {
                   const isDone = stepOrder.indexOf(forecastStep) > i;
                   return (
                     <div key={step} className="flex items-center">
-                      {i > 0 && <div className={`w-8 h-0.5 mx-1 ${isDone ? "bg-[#F7E1E2]" : "bg-gray-200"}`} />}
+                      {i > 0 && <div className={`w-8 h-0.5 mx-1 ${isDone ? "bg-[#0071e3]" : "bg-gray-200"}`} />}
                       <button
                         onClick={() => setForecastStep(step)}
                         className={`px-4 py-2 text-sm font-medium rounded-full transition-all duration-300 ${
-                          isActive ? "bg-[#F7E1E2] text-[#1F2937] shadow-sm" :
-                          isDone ? "bg-[#F7E1E2]/50 text-[#1F2937]" :
-                          "text-[#9CA3AF] hover:text-[#1F2937] hover:bg-gray-50"
+                          isActive ? "bg-[#0071e3] text-white shadow-sm" :
+                          isDone ? "bg-[#0071e3]/25 text-[#1d1d1f]" :
+                          "text-[#86868b] hover:text-[#1d1d1f] hover:bg-gray-50"
                         }`}
                       >
                         {isDone ? "✓ " : `${i + 1}. `}{labels[i]}
@@ -1474,17 +1474,17 @@ export default function Home() {
             {forecastStep === "targets" && (
               <>
                 {/* 月度系数配置 */}
-                <div className="bg-white rounded-3xl shadow-[0_4px_40px_rgba(0,0,0,0.03)] p-8">
+                <div className="bg-white rounded-2xl shadow-[0_2px_12px_rgba(0,0,0,0.08)] p-8">
                   <div className="flex items-center justify-between mb-4">
                     <div className="flex items-center gap-2">
-                      <h2 className="text-lg font-semibold text-[#1F2937]">月度系数配置</h2>
+                      <h2 className="text-lg font-semibold text-[#1d1d1f]">月度系数配置</h2>
                       {editingCoefficients && (
-                        <span className="text-xs text-[#9CA3AF]">修改后自动保存</span>
+                        <span className="text-xs text-[#86868b]">修改后自动保存</span>
                       )}
                     </div>
                     <button
                       onClick={() => setEditingCoefficients(!editingCoefficients)}
-                      className="text-sm text-[#1F2937] bg-gray-50 hover:bg-gray-100 px-4 py-1.5 rounded-xl font-medium hover:scale-[1.03] active:scale-[0.97] transition-all duration-200"
+                      className="text-sm text-[#1d1d1f] bg-gray-50 hover:bg-gray-100 px-4 py-1.5 rounded-xl font-medium hover:scale-[1.03] active:scale-[0.97] transition-all duration-200"
                     >
                       {editingCoefficients ? "收起编辑" : "修改系数"}
                     </button>
@@ -1495,7 +1495,7 @@ export default function Home() {
                         const key = String(i + 1);
                         return (
                           <div key={key} className="flex flex-col">
-                            <label className="text-xs text-[#9CA3AF] mb-1">{i + 1}月</label>
+                            <label className="text-xs text-[#86868b] mb-1">{i + 1}月</label>
                             <input
                               type="number"
                               step="0.01"
@@ -1507,7 +1507,7 @@ export default function Home() {
                                   [key]: Number(e.target.value) || 0,
                                 }))
                               }
-                              className="border-0 bg-gray-50 rounded-xl px-2 py-1.5 text-sm text-center w-full focus:ring-2 focus:ring-[#F7E1E2] focus:outline-none transition-all duration-200"
+                              className="border-0 bg-gray-50 rounded-xl px-2 py-1.5 text-sm text-center w-full focus:ring-2 focus:ring-[#0071e3] focus:outline-none transition-all duration-200"
                             />
                           </div>
                         );
@@ -1515,9 +1515,9 @@ export default function Home() {
                     </div>
                   )}
                   {!editingCoefficients && (
-                    <div className="flex gap-2 flex-wrap text-xs text-[#9CA3AF]">
+                    <div className="flex gap-2 flex-wrap text-xs text-[#86868b]">
                       {Array.from({ length: 12 }, (_, i) => (
-                        <span key={i} className="bg-[#F7E1E2]/30 px-2.5 py-1 rounded-full">
+                        <span key={i} className="bg-[#0071e3]/15 px-2.5 py-1 rounded-full">
                           {i + 1}月: {monthlyCoefficients[String(i + 1)]}
                         </span>
                       ))}
@@ -1526,13 +1526,13 @@ export default function Home() {
                 </div>
 
                 {/* 月营业额目标 */}
-                <div className="bg-white rounded-3xl shadow-[0_4px_40px_rgba(0,0,0,0.03)] p-8">
+                <div className="bg-white rounded-2xl shadow-[0_2px_12px_rgba(0,0,0,0.08)] p-8">
                   <div className="flex items-center justify-between mb-4">
-                    <h2 className="text-lg font-semibold text-[#1F2937]">月营业额目标 ({year}年)</h2>
+                    <h2 className="text-lg font-semibold text-[#1d1d1f]">月营业额目标 ({year}年)</h2>
                     <button
                       onClick={handleGenerateMonthly}
                       disabled={loading}
-                      className="bg-[#F7E1E2] text-[#1F2937] px-6 py-2.5 rounded-xl hover:bg-[#EBCDCF] hover:scale-[1.03] active:scale-[0.97] disabled:opacity-50 text-sm font-medium transition-all duration-200"
+                      className="bg-[#0071e3] text-white px-6 py-2.5 rounded-xl hover:bg-[#005bb5] hover:scale-[1.03] active:scale-[0.97] disabled:opacity-50 text-sm font-medium transition-all duration-200"
                     >
                       计算月目标
                     </button>
@@ -1542,34 +1542,34 @@ export default function Home() {
                       <table className="min-w-full text-sm">
                         <thead className="bg-gray-50/50">
                           <tr>
-                            <th className="px-3 py-2 text-left text-[#9CA3AF] font-medium text-xs">月份</th>
-                            <th className="px-3 py-2 text-right text-[#9CA3AF] font-medium text-xs">系数</th>
-                            <th className="px-3 py-2 text-right text-[#9CA3AF] font-medium text-xs">基础营业额</th>
-                            <th className="px-3 py-2 text-right text-[#9CA3AF] font-medium text-xs">含赋能营业额</th>
+                            <th className="px-3 py-2 text-left text-[#86868b] font-medium text-xs">月份</th>
+                            <th className="px-3 py-2 text-right text-[#86868b] font-medium text-xs">系数</th>
+                            <th className="px-3 py-2 text-right text-[#86868b] font-medium text-xs">基础营业额</th>
+                            <th className="px-3 py-2 text-right text-[#86868b] font-medium text-xs">含赋能营业额</th>
                           </tr>
                         </thead>
                         <tbody>
                           {monthlyTargets.map((t) => (
                             <tr
                               key={t.month}
-                              className={`hover:bg-[#F7E1E2]/20 cursor-pointer transition-colors duration-200 border-b border-gray-50 ${
-                                t.month === selectedMonth ? "bg-[#F7E1E2]/30" : ""
+                              className={`hover:bg-[#0071e3]/5 cursor-pointer transition-colors duration-200 border-b border-gray-50 ${
+                                t.month === selectedMonth ? "bg-[#0071e3]/15" : ""
                               }`}
                               onClick={() => setSelectedMonth(t.month)}
                             >
                               <td className="px-3 py-2 font-medium">{t.month}月</td>
                               <td className="px-3 py-2 text-right">{t.coefficient}</td>
                               <td className="px-3 py-2 text-right">{t.baseRevenue.toLocaleString()}</td>
-                              <td className="px-3 py-2 text-right font-semibold text-[#1F2937]">{t.enhancedRevenue.toLocaleString()}</td>
+                              <td className="px-3 py-2 text-right font-semibold text-[#1d1d1f]">{t.enhancedRevenue.toLocaleString()}</td>
                             </tr>
                           ))}
                         </tbody>
-                        <tfoot className="bg-[#F7E1E2]/20 font-semibold">
+                        <tfoot className="bg-[#0071e3]/10 font-semibold">
                           <tr>
                             <td className="px-3 py-2">合计</td>
                             <td className="px-3 py-2 text-right">-</td>
                             <td className="px-3 py-2 text-right">{monthlyTargets.reduce((s, t) => s + t.baseRevenue, 0).toLocaleString()}</td>
-                            <td className="px-3 py-2 text-right text-[#1F2937]">{monthlyTargets.reduce((s, t) => s + t.enhancedRevenue, 0).toLocaleString()}</td>
+                            <td className="px-3 py-2 text-right text-[#1d1d1f]">{monthlyTargets.reduce((s, t) => s + t.enhancedRevenue, 0).toLocaleString()}</td>
                           </tr>
                         </tfoot>
                       </table>
@@ -1578,19 +1578,19 @@ export default function Home() {
                 </div>
 
                 {/* 日营业额目标 */}
-                <div className="bg-white rounded-3xl shadow-[0_4px_40px_rgba(0,0,0,0.03)] p-8">
+                <div className="bg-white rounded-2xl shadow-[0_2px_12px_rgba(0,0,0,0.08)] p-8">
                   <div className="flex items-center justify-between mb-4">
-                    <h2 className="text-lg font-semibold text-[#1F2937]">{selectedMonth}月 日营业额目标</h2>
+                    <h2 className="text-lg font-semibold text-[#1d1d1f]">{selectedMonth}月 日营业额目标</h2>
                     <div className="flex gap-2">
-                      <button onClick={handleFetchAICorrection} disabled={aiLoading || dailyTargets.length === 0} className="bg-gray-50 text-[#1F2937] px-4 py-2.5 rounded-xl hover:bg-gray-100 hover:scale-[1.03] active:scale-[0.97] disabled:opacity-50 text-sm font-medium transition-all duration-200">
+                      <button onClick={handleFetchAICorrection} disabled={aiLoading || dailyTargets.length === 0} className="bg-gray-50 text-[#1d1d1f] px-4 py-2.5 rounded-xl hover:bg-gray-100 hover:scale-[1.03] active:scale-[0.97] disabled:opacity-50 text-sm font-medium transition-all duration-200">
                         {aiLoading ? "AI分析中..." : "获取AI修正建议"}
                       </button>
                       {aiCorrections.length > 0 && (
-                        <button onClick={handleAdoptAllAI} className="bg-gray-50 text-[#1F2937] px-4 py-2.5 rounded-xl hover:bg-gray-100 hover:scale-[1.03] active:scale-[0.97] text-sm font-medium transition-all duration-200">
+                        <button onClick={handleAdoptAllAI} className="bg-gray-50 text-[#1d1d1f] px-4 py-2.5 rounded-xl hover:bg-gray-100 hover:scale-[1.03] active:scale-[0.97] text-sm font-medium transition-all duration-200">
                           一键采用全部AI建议
                         </button>
                       )}
-                      <button onClick={handleGenerateDaily} disabled={loading} className="bg-[#F7E1E2] text-[#1F2937] px-6 py-2.5 rounded-xl hover:bg-[#EBCDCF] hover:scale-[1.03] active:scale-[0.97] disabled:opacity-50 text-sm font-medium transition-all duration-200">
+                      <button onClick={handleGenerateDaily} disabled={loading} className="bg-[#0071e3] text-white px-6 py-2.5 rounded-xl hover:bg-[#005bb5] hover:scale-[1.03] active:scale-[0.97] disabled:opacity-50 text-sm font-medium transition-all duration-200">
                         计算日目标
                       </button>
                     </div>
@@ -1608,28 +1608,28 @@ export default function Home() {
                         <table className="min-w-full text-sm">
                           <thead className="bg-gray-50/50">
                             <tr>
-                              <th className="px-3 py-2 text-left text-[#9CA3AF] font-medium text-xs">日期</th>
-                              <th className="px-3 py-2 text-center text-[#9CA3AF] font-medium text-xs">星期</th>
-                              <th className="px-3 py-2 text-center text-[#9CA3AF] font-medium text-xs">类型</th>
-                              <th className="px-3 py-2 text-right text-[#9CA3AF] font-medium text-xs">原权重</th>
-                              <th className="px-3 py-2 text-right text-[#9CA3AF] font-medium text-xs">营业额</th>
-                              <th className="px-3 py-2 text-right text-[#9CA3AF] font-medium text-xs">出货金额</th>
+                              <th className="px-3 py-2 text-left text-[#86868b] font-medium text-xs">日期</th>
+                              <th className="px-3 py-2 text-center text-[#86868b] font-medium text-xs">星期</th>
+                              <th className="px-3 py-2 text-center text-[#86868b] font-medium text-xs">类型</th>
+                              <th className="px-3 py-2 text-right text-[#86868b] font-medium text-xs">原权重</th>
+                              <th className="px-3 py-2 text-right text-[#86868b] font-medium text-xs">营业额</th>
+                              <th className="px-3 py-2 text-right text-[#86868b] font-medium text-xs">出货金额</th>
                               {aiCorrections.length > 0 && (
                                 <>
-                                  <th className="px-3 py-2 text-right bg-[#F7E1E2]/20 text-[#9CA3AF] font-medium text-xs">AI系数</th>
-                                  <th className="px-3 py-2 text-right bg-[#F7E1E2]/20 text-[#9CA3AF] font-medium text-xs">AI营业额</th>
-                                  <th className="px-3 py-2 text-left bg-[#F7E1E2]/20 text-[#9CA3AF] font-medium text-xs">AI理由</th>
-                                  <th className="px-3 py-2 text-center bg-[#F7E1E2]/20 text-[#9CA3AF] font-medium text-xs">操作</th>
+                                  <th className="px-3 py-2 text-right bg-[#0071e3]/10 text-[#86868b] font-medium text-xs">AI系数</th>
+                                  <th className="px-3 py-2 text-right bg-[#0071e3]/10 text-[#86868b] font-medium text-xs">AI营业额</th>
+                                  <th className="px-3 py-2 text-left bg-[#0071e3]/10 text-[#86868b] font-medium text-xs">AI理由</th>
+                                  <th className="px-3 py-2 text-center bg-[#0071e3]/10 text-[#86868b] font-medium text-xs">操作</th>
                                 </>
                               )}
-                              <th className="px-3 py-2 text-center text-[#9CA3AF] font-medium text-xs">查看</th>
+                              <th className="px-3 py-2 text-center text-[#86868b] font-medium text-xs">查看</th>
                             </tr>
                           </thead>
                           <tbody>
                             {dailyTargets.map((d) => {
                               const aiC = aiCorrections.find((c) => c.date === d.date);
                               return (
-                                <tr key={d.date} className={`hover:bg-[#F7E1E2]/20 transition-colors duration-200 border-b border-gray-50 ${d.date === selectedDate ? "bg-[#F7E1E2]/30" : ""} ${d.dayType === "weekend" ? "bg-orange-50/30" : d.dayType === "friday" ? "bg-yellow-50/30" : ""}`}>
+                                <tr key={d.date} className={`hover:bg-[#0071e3]/5 transition-colors duration-200 border-b border-gray-50 ${d.date === selectedDate ? "bg-[#0071e3]/15" : ""} ${d.dayType === "weekend" ? "bg-orange-50/30" : d.dayType === "friday" ? "bg-yellow-50/30" : ""}`}>
                                   <td className="px-3 py-2 font-medium">{d.date}</td>
                                   <td className="px-3 py-2 text-center">周{DOW_LABELS[d.dayOfWeek]}</td>
                                   <td className="px-3 py-2 text-center">
@@ -1642,12 +1642,12 @@ export default function Home() {
                                   <td className="px-3 py-2 text-right font-semibold">{d.shipmentAmount.toLocaleString()}</td>
                                   {aiCorrections.length > 0 && (
                                     <>
-                                      <td className={`px-3 py-2 text-right bg-[#F7E1E2]/10 ${aiC && aiC.aiCoefficient !== d.weight ? "font-bold text-[#d4727a]" : ""}`}>{aiC ? aiC.aiCoefficient : "-"}</td>
-                                      <td className="px-3 py-2 text-right bg-[#F7E1E2]/10">{aiC ? aiC.aiRevenue.toLocaleString() : "-"}</td>
-                                      <td className="px-3 py-2 text-left bg-[#F7E1E2]/10 text-xs max-w-[200px] truncate" title={aiC?.reason}>{aiC?.reason || "-"}</td>
-                                      <td className="px-3 py-2 text-center bg-[#F7E1E2]/10">
+                                      <td className={`px-3 py-2 text-right bg-[#0071e3]/5 ${aiC && aiC.aiCoefficient !== d.weight ? "font-bold text-[#0071e3]" : ""}`}>{aiC ? aiC.aiCoefficient : "-"}</td>
+                                      <td className="px-3 py-2 text-right bg-[#0071e3]/5">{aiC ? aiC.aiRevenue.toLocaleString() : "-"}</td>
+                                      <td className="px-3 py-2 text-left bg-[#0071e3]/5 text-xs max-w-[200px] truncate" title={aiC?.reason}>{aiC?.reason || "-"}</td>
+                                      <td className="px-3 py-2 text-center bg-[#0071e3]/5">
                                         {aiC && !aiC.adopted ? (
-                                          <button onClick={() => handleAdoptAI(d.date)} className="text-[#d4727a] hover:text-[#1F2937] text-xs font-medium transition-colors duration-200">采用</button>
+                                          <button onClick={() => handleAdoptAI(d.date)} className="text-[#0071e3] hover:text-[#1d1d1f] text-xs font-medium transition-colors duration-200">采用</button>
                                         ) : aiC?.adopted ? (
                                           <span className="text-green-600 text-xs">已采用</span>
                                         ) : null}
@@ -1655,7 +1655,7 @@ export default function Home() {
                                     </>
                                   )}
                                   <td className="px-3 py-2 text-center">
-                                    <button onClick={() => { setSelectedDate(d.date); setForecastStep("products"); }} className="text-[#d4727a] hover:text-[#1F2937] text-xs transition-colors duration-200">查看单品</button>
+                                    <button onClick={() => { setSelectedDate(d.date); setForecastStep("products"); }} className="text-[#0071e3] hover:text-[#1d1d1f] text-xs transition-colors duration-200">查看单品</button>
                                   </td>
                                 </tr>
                               );
@@ -1669,7 +1669,7 @@ export default function Home() {
 
                 {/* Step Navigation */}
                 <div className="flex justify-end">
-                  <button onClick={() => setForecastStep("products")} className="bg-[#F7E1E2] text-[#1F2937] px-6 py-2.5 rounded-xl hover:bg-[#EBCDCF] text-sm font-medium transition-all duration-200">
+                  <button onClick={() => setForecastStep("products")} className="bg-[#0071e3] text-white px-6 py-2.5 rounded-xl hover:bg-[#005bb5] text-sm font-medium transition-all duration-200">
                     下一步：单品建议 →
                   </button>
                 </div>
@@ -1679,21 +1679,21 @@ export default function Home() {
             {/* Step 2: Product Suggestions */}
             {forecastStep === "products" && (
               <>
-                <div className="bg-white rounded-3xl shadow-[0_4px_40px_rgba(0,0,0,0.03)] p-8">
+                <div className="bg-white rounded-2xl shadow-[0_2px_12px_rgba(0,0,0,0.08)] p-8">
                   <div className="flex items-center justify-between mb-4">
                     <div>
-                      <h2 className="text-lg font-semibold text-[#1F2937]">单品出货建议</h2>
-                      <p className="text-sm text-[#9CA3AF] mt-1">日期：{selectedDate || "请先选择日期"} | 目标出货金额：{currentDayTarget?.shipmentAmount?.toLocaleString() || "-"}</p>
+                      <h2 className="text-lg font-semibold text-[#1d1d1f]">单品出货建议</h2>
+                      <p className="text-sm text-[#86868b] mt-1">日期：{selectedDate || "请先选择日期"} | 目标出货金额：{currentDayTarget?.shipmentAmount?.toLocaleString() || "-"}</p>
                     </div>
                     <div className="flex gap-2">
-                      <select value={selectedDate} onChange={(e) => setSelectedDate(e.target.value)} className="border-0 bg-gray-50 rounded-xl px-3 py-2 text-sm focus:ring-2 focus:ring-[#F7E1E2] focus:outline-none transition-all duration-200">
+                      <select value={selectedDate} onChange={(e) => setSelectedDate(e.target.value)} className="border-0 bg-gray-50 rounded-xl px-3 py-2 text-sm focus:ring-2 focus:ring-[#0071e3] focus:outline-none transition-all duration-200">
                         <option value="">选择日期</option>
                         {dailyTargets.map((d) => (<option key={d.date} value={d.date}>{d.date} (周{DOW_LABELS[d.dayOfWeek]})</option>))}
                       </select>
-                      <button onClick={handleFetchAIProductCorrection} disabled={aiProductCorrectionLoading || productSuggestions.length === 0} className="bg-gray-50 text-[#1F2937] px-4 py-2.5 rounded-xl hover:bg-gray-100 hover:scale-[1.03] active:scale-[0.97] disabled:opacity-50 text-sm font-medium transition-all duration-200">
+                      <button onClick={handleFetchAIProductCorrection} disabled={aiProductCorrectionLoading || productSuggestions.length === 0} className="bg-gray-50 text-[#1d1d1f] px-4 py-2.5 rounded-xl hover:bg-gray-100 hover:scale-[1.03] active:scale-[0.97] disabled:opacity-50 text-sm font-medium transition-all duration-200">
                         {aiProductCorrectionLoading ? "AI 分析中..." : "AI 智能校正"}
                       </button>
-                      <button onClick={handleGenerateProducts} disabled={loading || !selectedDate} className="bg-[#F7E1E2] text-[#1F2937] px-6 py-2.5 rounded-xl hover:bg-[#EBCDCF] hover:scale-[1.03] active:scale-[0.97] disabled:opacity-50 text-sm font-medium transition-all duration-200">
+                      <button onClick={handleGenerateProducts} disabled={loading || !selectedDate} className="bg-[#0071e3] text-white px-6 py-2.5 rounded-xl hover:bg-[#005bb5] hover:scale-[1.03] active:scale-[0.97] disabled:opacity-50 text-sm font-medium transition-all duration-200">
                         生成建议
                       </button>
                     </div>
@@ -1705,12 +1705,12 @@ export default function Home() {
                   )}
                   {aiProductCorrectionError && <div className="mb-4 p-3 bg-red-50/70 text-red-700 rounded-2xl text-sm">{aiProductCorrectionError}</div>}
                   {aiProductAnalysis && !aiProductCorrectionAdopted && (
-                    <div className="mb-4 p-4 bg-[#F7E1E2]/30 rounded-2xl">
+                    <div className="mb-4 p-4 bg-[#0071e3]/15 rounded-2xl">
                       <div className="flex items-center justify-between mb-2">
-                        <span className="text-sm font-medium text-[#1F2937]">AI 校正分析</span>
-                        <button onClick={handleAdoptAIProductCorrection} className="bg-[#F7E1E2] text-[#1F2937] px-4 py-1.5 rounded-xl text-sm hover:bg-[#EBCDCF] hover:scale-[1.03] active:scale-[0.97] font-medium transition-all duration-200">采纳 AI 建议</button>
+                        <span className="text-sm font-medium text-[#1d1d1f]">AI 校正分析</span>
+                        <button onClick={handleAdoptAIProductCorrection} className="bg-[#0071e3] text-white px-4 py-1.5 rounded-xl text-sm hover:bg-[#005bb5] hover:scale-[1.03] active:scale-[0.97] font-medium transition-all duration-200">采纳 AI 建议</button>
                       </div>
-                      <p className="text-sm text-[#1F2937]/70">{aiProductAnalysis}</p>
+                      <p className="text-sm text-[#1d1d1f]/70">{aiProductAnalysis}</p>
                     </div>
                   )}
                   {aiProductCorrectionAdopted && <div className="mb-4 p-3 bg-green-50/70 text-green-700 rounded-2xl text-sm">已采纳 AI 单品校正建议</div>}
@@ -1719,22 +1719,22 @@ export default function Home() {
                       <table className="min-w-full text-sm">
                         <thead className="bg-gray-50/50">
                           <tr>
-                            <th className="px-3 py-2 text-left text-[#9CA3AF] font-medium text-xs">品名</th>
-                            <th className="px-3 py-2 text-center text-[#9CA3AF] font-medium text-xs">定位</th>
-                            <th className="px-3 py-2 text-center text-[#9CA3AF] font-medium text-xs">冷/热</th>
-                            <th className="px-3 py-2 text-right text-[#9CA3AF] font-medium text-xs">单价</th>
-                            <th className="px-3 py-2 text-right text-[#9CA3AF] font-medium text-xs">倍数</th>
-                            <th className="px-3 py-2 text-right text-[#9CA3AF] font-medium text-xs">历史基线</th>
-                            <th className="px-3 py-2 text-right text-[#9CA3AF] font-medium text-xs">建议数量</th>
-                            {aiProductCorrections.length > 0 && !aiProductCorrectionAdopted && <th className="px-3 py-2 text-right text-[#9CA3AF] font-medium text-xs">AI建议</th>}
-                            {aiProductCorrections.length > 0 && !aiProductCorrectionAdopted && <th className="px-3 py-2 text-left text-[#9CA3AF] font-medium text-xs">AI理由</th>}
-                            <th className="px-3 py-2 text-right text-[#9CA3AF] font-medium text-xs">调整数量</th>
-                            <th className="px-3 py-2 text-right text-[#9CA3AF] font-medium text-xs">金额</th>
+                            <th className="px-3 py-2 text-left text-[#86868b] font-medium text-xs">品名</th>
+                            <th className="px-3 py-2 text-center text-[#86868b] font-medium text-xs">定位</th>
+                            <th className="px-3 py-2 text-center text-[#86868b] font-medium text-xs">冷/热</th>
+                            <th className="px-3 py-2 text-right text-[#86868b] font-medium text-xs">单价</th>
+                            <th className="px-3 py-2 text-right text-[#86868b] font-medium text-xs">倍数</th>
+                            <th className="px-3 py-2 text-right text-[#86868b] font-medium text-xs">历史基线</th>
+                            <th className="px-3 py-2 text-right text-[#86868b] font-medium text-xs">建议数量</th>
+                            {aiProductCorrections.length > 0 && !aiProductCorrectionAdopted && <th className="px-3 py-2 text-right text-[#86868b] font-medium text-xs">AI建议</th>}
+                            {aiProductCorrections.length > 0 && !aiProductCorrectionAdopted && <th className="px-3 py-2 text-left text-[#86868b] font-medium text-xs">AI理由</th>}
+                            <th className="px-3 py-2 text-right text-[#86868b] font-medium text-xs">调整数量</th>
+                            <th className="px-3 py-2 text-right text-[#86868b] font-medium text-xs">金额</th>
                           </tr>
                         </thead>
                         <tbody>
                           {productSuggestions.map((s) => (
-                            <tr key={s.productName} className={`hover:bg-[#F7E1E2]/20 transition-colors duration-200 border-b border-gray-50 ${s.positioning === "TOP" ? "bg-red-50/20" : s.positioning === "潜在TOP" ? "bg-amber-50/20" : ""}`}>
+                            <tr key={s.productName} className={`hover:bg-[#0071e3]/5 transition-colors duration-200 border-b border-gray-50 ${s.positioning === "TOP" ? "bg-red-50/20" : s.positioning === "潜在TOP" ? "bg-amber-50/20" : ""}`}>
                               <td className="px-3 py-2 font-medium">{s.productName}</td>
                               <td className="px-3 py-2 text-center"><span className={`px-2 py-0.5 rounded-full text-xs ${s.positioning === "TOP" ? "bg-red-100 text-red-700" : s.positioning === "潜在TOP" ? "bg-amber-100 text-amber-700" : "bg-gray-100 text-gray-700"}`}>{s.positioning}</span></td>
                               <td className="px-3 py-2 text-center"><span className={`px-2 py-0.5 rounded-full text-xs ${s.coldHot === "热" ? "bg-red-100 text-red-600" : "bg-blue-100 text-blue-600"}`}>{s.coldHot}</span></td>
@@ -1744,16 +1744,16 @@ export default function Home() {
                               <td className="px-3 py-2 text-right">{s.roundedQuantity}</td>
                               {aiProductCorrections.length > 0 && !aiProductCorrectionAdopted && (() => {
                                 const c = aiProductCorrections.find((x) => x.productName === s.productName);
-                                return (<><td className="px-3 py-2 text-right font-medium text-[#d4727a]">{c ? c.suggestedQuantity : "-"}</td><td className="px-3 py-2 text-left text-xs text-[#1F2937]/60 max-w-[200px] truncate">{c ? c.reason : "-"}</td></>);
+                                return (<><td className="px-3 py-2 text-right font-medium text-[#0071e3]">{c ? c.suggestedQuantity : "-"}</td><td className="px-3 py-2 text-left text-xs text-[#1d1d1f]/60 max-w-[200px] truncate">{c ? c.reason : "-"}</td></>);
                               })()}
                               <td className="px-3 py-2 text-right">
-                                <input type="number" value={adjustedQuantities[s.productName] ?? s.adjustedQuantity ?? s.roundedQuantity} onChange={(e) => handleQuantityChange(s.productName, Number(e.target.value))} className="w-20 border-0 bg-gray-50 rounded-xl px-2 py-1 text-right text-sm focus:ring-2 focus:ring-[#F7E1E2] focus:outline-none transition-all duration-200" min={0} step={s.packMultiple} />
+                                <input type="number" value={adjustedQuantities[s.productName] ?? s.adjustedQuantity ?? s.roundedQuantity} onChange={(e) => handleQuantityChange(s.productName, Number(e.target.value))} className="w-20 border-0 bg-gray-50 rounded-xl px-2 py-1 text-right text-sm focus:ring-2 focus:ring-[#0071e3] focus:outline-none transition-all duration-200" min={0} step={s.packMultiple} />
                               </td>
                               <td className="px-3 py-2 text-right font-semibold">{s.totalAmount.toLocaleString()}</td>
                             </tr>
                           ))}
                         </tbody>
-                        <tfoot className="bg-[#F7E1E2]/20 font-semibold">
+                        <tfoot className="bg-[#0071e3]/10 font-semibold">
                           <tr>
                             <td className="px-3 py-2" colSpan={aiProductCorrections.length > 0 && !aiProductCorrectionAdopted ? 10 : 8}>合计</td>
                             <td className="px-3 py-2 text-right">{totalSuggestedAmount.toLocaleString()}</td>
@@ -1764,8 +1764,8 @@ export default function Home() {
                   )}
                 </div>
                 <div className="flex justify-between">
-                  <button onClick={() => setForecastStep("targets")} className="text-[#9CA3AF] hover:text-[#1F2937] px-4 py-2.5 text-sm font-medium transition-colors">← 月/日目标</button>
-                  <button onClick={() => setForecastStep("timeslots")} className="bg-[#F7E1E2] text-[#1F2937] px-6 py-2.5 rounded-xl hover:bg-[#EBCDCF] text-sm font-medium transition-all duration-200">下一步：分时段 →</button>
+                  <button onClick={() => setForecastStep("targets")} className="text-[#86868b] hover:text-[#1d1d1f] px-4 py-2.5 text-sm font-medium transition-colors">← 月/日目标</button>
+                  <button onClick={() => setForecastStep("timeslots")} className="bg-[#0071e3] text-white px-6 py-2.5 rounded-xl hover:bg-[#005bb5] text-sm font-medium transition-all duration-200">下一步：分时段 →</button>
                 </div>
               </>
             )}
@@ -1773,26 +1773,26 @@ export default function Home() {
             {/* Step 3: Time Slots */}
             {forecastStep === "timeslots" && (
               <>
-                <div className="bg-white rounded-3xl shadow-[0_4px_40px_rgba(0,0,0,0.03)] p-8">
+                <div className="bg-white rounded-2xl shadow-[0_2px_12px_rgba(0,0,0,0.08)] p-8">
                   <div className="flex items-center justify-between mb-4">
-                    <h2 className="text-lg font-semibold text-[#1F2937]">分时段出货建议 - {selectedDate}</h2>
+                    <h2 className="text-lg font-semibold text-[#1d1d1f]">分时段出货建议 - {selectedDate}</h2>
                     <div className="flex gap-2">
-                      <button onClick={handleFetchAITimeSlot} disabled={aiTimeSlotLoading || productSuggestions.length === 0} className="bg-[#F7E1E2] text-[#1F2937] px-6 py-2.5 rounded-xl hover:bg-[#EBCDCF] hover:scale-[1.03] active:scale-[0.97] disabled:opacity-50 text-sm font-medium transition-all duration-200">
+                      <button onClick={handleFetchAITimeSlot} disabled={aiTimeSlotLoading || productSuggestions.length === 0} className="bg-[#0071e3] text-white px-6 py-2.5 rounded-xl hover:bg-[#005bb5] hover:scale-[1.03] active:scale-[0.97] disabled:opacity-50 text-sm font-medium transition-all duration-200">
                         {aiTimeSlotLoading ? "AI 分析中..." : "AI 智能分配"}
                       </button>
-                      <button onClick={handleGenerateTimeSlots} disabled={loading || productSuggestions.length === 0} className="bg-gray-50 text-[#1F2937] px-4 py-2.5 rounded-xl hover:bg-gray-100 hover:scale-[1.03] active:scale-[0.97] disabled:opacity-50 text-sm font-medium transition-all duration-200">
+                      <button onClick={handleGenerateTimeSlots} disabled={loading || productSuggestions.length === 0} className="bg-gray-50 text-[#1d1d1f] px-4 py-2.5 rounded-xl hover:bg-gray-100 hover:scale-[1.03] active:scale-[0.97] disabled:opacity-50 text-sm font-medium transition-all duration-200">
                         规则生成
                       </button>
                     </div>
                   </div>
                   {aiTimeSlotError && <div className="mb-4 p-3 bg-red-50/70 text-red-700 rounded-2xl text-sm">{aiTimeSlotError}</div>}
                   {aiTimeSlotAnalysis && !aiTimeSlotAdopted && (
-                    <div className="mb-4 p-4 bg-[#F7E1E2]/30 rounded-2xl">
+                    <div className="mb-4 p-4 bg-[#0071e3]/15 rounded-2xl">
                       <div className="flex items-center justify-between mb-2">
-                        <span className="text-sm font-medium text-[#1F2937]">AI 分析结果</span>
-                        <button onClick={handleAdoptAITimeSlot} className="bg-[#F7E1E2] text-[#1F2937] px-4 py-1.5 rounded-xl text-sm hover:bg-[#EBCDCF] hover:scale-[1.03] active:scale-[0.97] font-medium transition-all duration-200">采纳 AI 建议</button>
+                        <span className="text-sm font-medium text-[#1d1d1f]">AI 分析结果</span>
+                        <button onClick={handleAdoptAITimeSlot} className="bg-[#0071e3] text-white px-4 py-1.5 rounded-xl text-sm hover:bg-[#005bb5] hover:scale-[1.03] active:scale-[0.97] font-medium transition-all duration-200">采纳 AI 建议</button>
                       </div>
-                      <p className="text-sm text-[#1F2937]/70">{aiTimeSlotAnalysis}</p>
+                      <p className="text-sm text-[#1d1d1f]/70">{aiTimeSlotAnalysis}</p>
                     </div>
                   )}
                   {aiTimeSlotAdopted && <div className="mb-4 p-3 bg-green-50/70 text-green-700 rounded-2xl text-sm">已采纳 AI 分时段建议</div>}
@@ -1803,8 +1803,8 @@ export default function Home() {
                   )}
                 </div>
                 <div className="flex justify-between">
-                  <button onClick={() => setForecastStep("products")} className="text-[#9CA3AF] hover:text-[#1F2937] px-4 py-2.5 text-sm font-medium transition-colors">← 单品建议</button>
-                  <button onClick={() => setForecastStep("export")} className="bg-[#F7E1E2] text-[#1F2937] px-6 py-2.5 rounded-xl hover:bg-[#EBCDCF] text-sm font-medium transition-all duration-200">下一步：导出 →</button>
+                  <button onClick={() => setForecastStep("products")} className="text-[#86868b] hover:text-[#1d1d1f] px-4 py-2.5 text-sm font-medium transition-colors">← 单品建议</button>
+                  <button onClick={() => setForecastStep("export")} className="bg-[#0071e3] text-white px-6 py-2.5 rounded-xl hover:bg-[#005bb5] text-sm font-medium transition-all duration-200">下一步：导出 →</button>
                 </div>
               </>
             )}
@@ -1812,15 +1812,15 @@ export default function Home() {
             {/* Step 4: Export */}
             {forecastStep === "export" && (
               <>
-                <div className="bg-white rounded-3xl shadow-[0_4px_40px_rgba(0,0,0,0.03)] p-8">
-                  <h2 className="text-lg font-semibold text-[#1F2937] mb-4">导出 Excel</h2>
-                  <p className="text-sm text-[#9CA3AF] mb-4">导出当前月度目标、日目标、单品建议和分时段数据。</p>
-                  <button onClick={handleExport} disabled={monthlyTargets.length === 0 && dailyTargets.length === 0} className="bg-[#F7E1E2] text-[#1F2937] px-6 py-2.5 rounded-xl hover:bg-[#EBCDCF] hover:scale-[1.03] active:scale-[0.97] disabled:opacity-50 font-medium transition-all duration-200">
+                <div className="bg-white rounded-2xl shadow-[0_2px_12px_rgba(0,0,0,0.08)] p-8">
+                  <h2 className="text-lg font-semibold text-[#1d1d1f] mb-4">导出 Excel</h2>
+                  <p className="text-sm text-[#86868b] mb-4">导出当前月度目标、日目标、单品建议和分时段数据。</p>
+                  <button onClick={handleExport} disabled={monthlyTargets.length === 0 && dailyTargets.length === 0} className="bg-[#0071e3] text-white px-6 py-2.5 rounded-xl hover:bg-[#005bb5] hover:scale-[1.03] active:scale-[0.97] disabled:opacity-50 font-medium transition-all duration-200">
                     导出 Excel 文件
                   </button>
                 </div>
                 <div className="flex justify-start">
-                  <button onClick={() => setForecastStep("timeslots")} className="text-[#9CA3AF] hover:text-[#1F2937] px-4 py-2.5 text-sm font-medium transition-colors">← 分时段</button>
+                  <button onClick={() => setForecastStep("timeslots")} className="text-[#86868b] hover:text-[#1d1d1f] px-4 py-2.5 text-sm font-medium transition-colors">← 分时段</button>
                 </div>
               </>
             )}
@@ -1829,20 +1829,20 @@ export default function Home() {
         {/* ===== REVIEW TAB ===== */}
         {activeTab === "review" && (
           <div className="space-y-6 animate-fade-slide-up">
-            <div className="bg-white rounded-3xl shadow-[0_4px_40px_rgba(0,0,0,0.03)] p-8">
-              <h2 className="text-lg font-semibold text-[#1F2937] mb-4">每日复盘</h2>
+            <div className="bg-white rounded-2xl shadow-[0_2px_12px_rgba(0,0,0,0.08)] p-8">
+              <h2 className="text-lg font-semibold text-[#1d1d1f] mb-4">每日复盘</h2>
               <div className="grid grid-cols-2 gap-4 mb-4">
                 <div>
-                  <label className="text-sm font-medium text-[#1F2937]">复盘日期</label>
-                  <input type="date" value={reviewDate} onChange={(e) => setReviewDate(e.target.value)} className="mt-1 w-full border-0 bg-gray-50 rounded-xl px-3 py-2 text-sm focus:ring-2 focus:ring-[#F7E1E2] focus:outline-none transition-all duration-200" />
+                  <label className="text-sm font-medium text-[#1d1d1f]">复盘日期</label>
+                  <input type="date" value={reviewDate} onChange={(e) => setReviewDate(e.target.value)} className="mt-1 w-full border-0 bg-gray-50 rounded-xl px-3 py-2 text-sm focus:ring-2 focus:ring-[#0071e3] focus:outline-none transition-all duration-200" />
                 </div>
                 <div>
-                  <label className="text-sm font-medium text-[#1F2937]">实际营业额 (RM)</label>
-                  <input type="number" value={reviewActualRevenue} onChange={(e) => setReviewActualRevenue(e.target.value)} placeholder="如 58000" className="mt-1 w-full border-0 bg-gray-50 rounded-xl px-3 py-2 text-sm focus:ring-2 focus:ring-[#F7E1E2] focus:outline-none transition-all duration-200" />
+                  <label className="text-sm font-medium text-[#1d1d1f]">实际营业额 (RM)</label>
+                  <input type="number" value={reviewActualRevenue} onChange={(e) => setReviewActualRevenue(e.target.value)} placeholder="如 58000" className="mt-1 w-full border-0 bg-gray-50 rounded-xl px-3 py-2 text-sm focus:ring-2 focus:ring-[#0071e3] focus:outline-none transition-all duration-200" />
                 </div>
               </div>
               <div className="mb-4">
-                <label className="text-sm font-medium text-[#1F2937]">断货记录（每行一个：产品名 时间）</label>
+                <label className="text-sm font-medium text-[#1d1d1f]">断货记录（每行一个：产品名 时间）</label>
                 <textarea value={stockoutText} onChange={(e) => {
                   setStockoutText(e.target.value);
                   const lines = e.target.value.split("\n").filter(Boolean);
@@ -1857,11 +1857,11 @@ export default function Home() {
                     return { productName: result.inputName, inputName: result.inputName, soldoutTime: result.soldoutTime, soldoutSlot, date: reviewDate, lossSlots, dayType: realDayType, estimatedLossQty: 0, estimatedLossAmount: 0 } satisfies OutOfStockRecord;
                   }).filter((x): x is OutOfStockRecord => x !== null);
                   setParsedStockouts(parsed);
-                }} placeholder={"奶油泡芙 3点\n巧克力蛋糕 下午2点\n抹茶卷 14:00"} rows={5} className="mt-1 w-full border-0 bg-gray-50 rounded-xl px-3 py-2 text-sm focus:ring-2 focus:ring-[#F7E1E2] focus:outline-none transition-all duration-200 font-mono" />
+                }} placeholder={"奶油泡芙 3点\n巧克力蛋糕 下午2点\n抹茶卷 14:00"} rows={5} className="mt-1 w-full border-0 bg-gray-50 rounded-xl px-3 py-2 text-sm focus:ring-2 focus:ring-[#0071e3] focus:outline-none transition-all duration-200 font-mono" />
               </div>
               {parsedStockouts.length > 0 && (
-                <div className="mb-4 p-3 bg-[#F7E1E2]/20 rounded-2xl">
-                  <p className="text-xs font-medium text-[#1F2937] mb-2">解析预览：</p>
+                <div className="mb-4 p-3 bg-[#0071e3]/10 rounded-2xl">
+                  <p className="text-xs font-medium text-[#1d1d1f] mb-2">解析预览：</p>
                   <div className="flex flex-wrap gap-2">
                     {parsedStockouts.map((s, i) => (
                       <span key={i} className="text-xs bg-white px-2 py-1 rounded-lg shadow-sm">
@@ -1893,14 +1893,14 @@ export default function Home() {
                   else showToast(data.error || "复盘失败", "error");
                 } catch (err) { showToast(String(err), "error"); }
                 finally { setReviewLoading(false); }
-              }} disabled={reviewLoading} className="bg-[#F7E1E2] text-[#1F2937] px-6 py-2.5 rounded-xl hover:bg-[#EBCDCF] hover:scale-[1.03] active:scale-[0.97] disabled:opacity-50 font-medium transition-all duration-200">
+              }} disabled={reviewLoading} className="bg-[#0071e3] text-white px-6 py-2.5 rounded-xl hover:bg-[#005bb5] hover:scale-[1.03] active:scale-[0.97] disabled:opacity-50 font-medium transition-all duration-200">
                 {reviewLoading ? "AI 分析中..." : "提交复盘"}
               </button>
             </div>
             {reviewResult && (
-              <div className="bg-white rounded-3xl shadow-[0_4px_40px_rgba(0,0,0,0.03)] p-8">
-                <h3 className="text-md font-semibold text-[#1F2937] mb-3">AI 复盘结果</h3>
-                <p className="text-sm text-[#4B5563] mb-3">{reviewResult.review?.summary || ""}</p>
+              <div className="bg-white rounded-2xl shadow-[0_2px_12px_rgba(0,0,0,0.08)] p-8">
+                <h3 className="text-md font-semibold text-[#1d1d1f] mb-3">AI 复盘结果</h3>
+                <p className="text-sm text-[#1d1d1f]/80 mb-3">{reviewResult.review?.summary || ""}</p>
                 {reviewResult.review?.highlights && reviewResult.review.highlights.length > 0 && (
                   <div className="flex flex-wrap gap-2 mb-3">
                     {reviewResult.review.highlights.map((h: string, i: number) => (<span key={i} className="text-xs bg-green-50 text-green-700 px-2 py-1 rounded-lg">✓ {h}</span>))}
@@ -1918,7 +1918,7 @@ export default function Home() {
                   </div>
                 )}
                 {!reviewResult.adopted && (
-                  <button onClick={async () => { await adoptDailyReview(reviewDate); setReviewResult({ ...reviewResult, adopted: true }); showToast("已采纳复盘建议", "success"); }} className="mt-4 bg-[#F7E1E2] text-[#1F2937] px-4 py-2 rounded-xl text-sm font-medium hover:bg-[#EBCDCF] transition-all duration-200">采纳建议</button>
+                  <button onClick={async () => { await adoptDailyReview(reviewDate); setReviewResult({ ...reviewResult, adopted: true }); showToast("已采纳复盘建议", "success"); }} className="mt-4 bg-[#0071e3] text-white px-4 py-2 rounded-xl text-sm font-medium hover:bg-[#005bb5] transition-all duration-200">采纳建议</button>
                 )}
                 {reviewResult.adopted && <p className="mt-4 text-sm text-green-600 font-medium">已采纳</p>}
               </div>
@@ -1928,17 +1928,17 @@ export default function Home() {
         {/* ===== CALENDAR TAB ===== */}
         {activeTab === "calendar" && (
           <div className="space-y-6 animate-fade-slide-up">
-            <div className="bg-white rounded-3xl shadow-[0_4px_40px_rgba(0,0,0,0.03)] p-8">
+            <div className="bg-white rounded-2xl shadow-[0_2px_12px_rgba(0,0,0,0.08)] p-8">
               <div className="flex items-center justify-between mb-4">
-                <h2 className="text-lg font-semibold text-[#1F2937]">事件日历 {calendarYear}年{calendarMonth + 1}月</h2>
+                <h2 className="text-lg font-semibold text-[#1d1d1f]">事件日历 {calendarYear}年{calendarMonth + 1}月</h2>
                 <div className="flex gap-2">
-                  <button onClick={() => { const d = dayjs().year(calendarYear).month(calendarMonth).subtract(1, "month"); setCalendarYear(d.year()); setCalendarMonth(d.month()); }} className="text-sm text-[#9CA3AF] hover:text-[#1F2937] px-3 py-1.5 rounded-xl hover:bg-gray-50 transition-all">← 上月</button>
-                  <button onClick={() => { const d = dayjs().year(calendarYear).month(calendarMonth).add(1, "month"); setCalendarYear(d.year()); setCalendarMonth(d.month()); }} className="text-sm text-[#9CA3AF] hover:text-[#1F2937] px-3 py-1.5 rounded-xl hover:bg-gray-50 transition-all">下月 →</button>
+                  <button onClick={() => { const d = dayjs().year(calendarYear).month(calendarMonth).subtract(1, "month"); setCalendarYear(d.year()); setCalendarMonth(d.month()); }} className="text-sm text-[#86868b] hover:text-[#1d1d1f] px-3 py-1.5 rounded-xl hover:bg-gray-50 transition-all">← 上月</button>
+                  <button onClick={() => { const d = dayjs().year(calendarYear).month(calendarMonth).add(1, "month"); setCalendarYear(d.year()); setCalendarMonth(d.month()); }} className="text-sm text-[#86868b] hover:text-[#1d1d1f] px-3 py-1.5 rounded-xl hover:bg-gray-50 transition-all">下月 →</button>
                 </div>
               </div>
               <div className="grid grid-cols-7 gap-1 mb-4">
                 {["日", "一", "二", "三", "四", "五", "六"].map((d) => (
-                  <div key={d} className="text-center text-xs text-[#9CA3AF] py-2 font-medium">{d}</div>
+                  <div key={d} className="text-center text-xs text-[#86868b] py-2 font-medium">{d}</div>
                 ))}
                 {(() => {
                   const firstDay = dayjs().year(calendarYear).month(calendarMonth).startOf("month");
@@ -1952,9 +1952,9 @@ export default function Home() {
                     const isSelected = selectedCalendarDate === dateStr;
                     const isToday = dateStr === dayjs().format("YYYY-MM-DD");
                     cells.push(
-                      <button key={d} onClick={() => setSelectedCalendarDate(dateStr)} className={`p-2 rounded-xl text-sm min-h-[60px] flex flex-col items-center transition-all duration-200 ${isSelected ? "bg-[#F7E1E2] shadow-sm" : isToday ? "bg-[#F7E1E2]/30" : "hover:bg-gray-50"}`}>
-                        <span className={`font-medium ${isSelected ? "text-[#1F2937]" : "text-[#4B5563]"}`}>{d}</span>
-                        {dayEvents.length > 0 && <div className="flex gap-0.5 mt-1 flex-wrap justify-center">{dayEvents.slice(0, 2).map((ev, i) => (<span key={i} className="w-1.5 h-1.5 rounded-full bg-[#d4727a]" />))}</div>}
+                      <button key={d} onClick={() => setSelectedCalendarDate(dateStr)} className={`p-2 rounded-xl text-sm min-h-[60px] flex flex-col items-center transition-all duration-200 ${isSelected ? "bg-[#0071e3] shadow-sm" : isToday ? "bg-[#0071e3]/15" : "hover:bg-gray-50"}`}>
+                        <span className={`font-medium ${isSelected ? "text-white" : "text-[#1d1d1f]/80"}`}>{d}</span>
+                        {dayEvents.length > 0 && <div className="flex gap-0.5 mt-1 flex-wrap justify-center">{dayEvents.slice(0, 2).map((ev, i) => (<span key={i} className="w-1.5 h-1.5 rounded-full bg-[#0071e3]" />))}</div>}
                       </button>
                     );
                   }
@@ -1963,30 +1963,30 @@ export default function Home() {
               </div>
             </div>
             {selectedCalendarDate && (
-              <div className="bg-white rounded-3xl shadow-[0_4px_40px_rgba(0,0,0,0.03)] p-8">
-                <h3 className="text-md font-semibold text-[#1F2937] mb-3">{selectedCalendarDate} 事件</h3>
+              <div className="bg-white rounded-2xl shadow-[0_2px_12px_rgba(0,0,0,0.08)] p-8">
+                <h3 className="text-md font-semibold text-[#1d1d1f] mb-3">{selectedCalendarDate} 事件</h3>
                 {calendarEvents.filter((e) => e.date === selectedCalendarDate).length > 0 ? (
                   <div className="space-y-2 mb-4">
                     {calendarEvents.filter((e) => e.date === selectedCalendarDate).map((e, i) => (
                       <div key={i} className="flex items-center justify-between p-3 bg-gray-50 rounded-xl">
                         <div>
-                          <span className="text-sm font-medium text-[#1F2937]">{e.eventTag}</span>
-                          {e.description && <span className="text-xs text-[#9CA3AF] ml-2">{e.description}</span>}
-                          <span className={`ml-2 text-xs px-2 py-0.5 rounded-full ${e.eventType === "promotion" ? "bg-[#F7E1E2] text-[#1F2937]" : e.eventType === "competition" ? "bg-red-100 text-red-700" : "bg-gray-100 text-gray-700"}`}>{e.eventType}</span>
+                          <span className="text-sm font-medium text-[#1d1d1f]">{e.eventTag}</span>
+                          {e.description && <span className="text-xs text-[#86868b] ml-2">{e.description}</span>}
+                          <span className={`ml-2 text-xs px-2 py-0.5 rounded-full ${e.eventType === "promotion" ? "bg-[#0071e3] text-white" : e.eventType === "competition" ? "bg-red-100 text-red-700" : "bg-gray-100 text-gray-700"}`}>{e.eventType}</span>
                         </div>
                         <button onClick={async () => { if (e.id) { await deleteContextEvent(e.id); setCalendarEvents((prev) => prev.filter((x) => x.id !== e.id)); showToast("已删除", "info"); } }} className="text-red-400 text-xs hover:text-red-600 transition-colors">删除</button>
                       </div>
                     ))}
                   </div>
-                ) : (<p className="text-sm text-[#9CA3AF] mb-4">该日暂无事件</p>)}
+                ) : (<p className="text-sm text-[#86868b] mb-4">该日暂无事件</p>)}
                 <div className="flex gap-2 items-end">
                   <div className="flex-1">
-                    <label className="text-xs text-[#9CA3AF]">事件标签</label>
-                    <input value={newEventTag} onChange={(e) => setNewEventTag(e.target.value)} className="w-full border-0 bg-gray-50 rounded-xl px-3 py-1.5 text-sm focus:ring-2 focus:ring-[#F7E1E2] focus:outline-none transition-all duration-200" placeholder="如: 开斋节" />
+                    <label className="text-xs text-[#86868b]">事件标签</label>
+                    <input value={newEventTag} onChange={(e) => setNewEventTag(e.target.value)} className="w-full border-0 bg-gray-50 rounded-xl px-3 py-1.5 text-sm focus:ring-2 focus:ring-[#0071e3] focus:outline-none transition-all duration-200" placeholder="如: 开斋节" />
                   </div>
                   <div>
-                    <label className="text-xs text-[#9CA3AF]">类型</label>
-                    <select value={newEventType} onChange={(e) => setNewEventType(e.target.value as ContextEvent["eventType"])} className="border-0 bg-gray-50 rounded-xl px-3 py-1.5 text-sm focus:ring-2 focus:ring-[#F7E1E2] focus:outline-none transition-all duration-200">
+                    <label className="text-xs text-[#86868b]">类型</label>
+                    <select value={newEventType} onChange={(e) => setNewEventType(e.target.value as ContextEvent["eventType"])} className="border-0 bg-gray-50 rounded-xl px-3 py-1.5 text-sm focus:ring-2 focus:ring-[#0071e3] focus:outline-none transition-all duration-200">
                       <option value="internal">内部活动</option>
                       <option value="promotion">促销</option>
                       <option value="weather">天气</option>
@@ -1995,8 +1995,8 @@ export default function Home() {
                     </select>
                   </div>
                   <div className="flex-1">
-                    <label className="text-xs text-[#9CA3AF]">描述</label>
-                    <input value={newEventDesc} onChange={(e) => setNewEventDesc(e.target.value)} className="w-full border-0 bg-gray-50 rounded-xl px-3 py-1.5 text-sm focus:ring-2 focus:ring-[#F7E1E2] focus:outline-none transition-all duration-200" placeholder="可选" />
+                    <label className="text-xs text-[#86868b]">描述</label>
+                    <input value={newEventDesc} onChange={(e) => setNewEventDesc(e.target.value)} className="w-full border-0 bg-gray-50 rounded-xl px-3 py-1.5 text-sm focus:ring-2 focus:ring-[#0071e3] focus:outline-none transition-all duration-200" placeholder="可选" />
                   </div>
                   <button onClick={async () => {
                     if (!newEventTag) return;
@@ -2005,7 +2005,7 @@ export default function Home() {
                     setCalendarEvents(events);
                     setNewEventTag(""); setNewEventDesc("");
                     showToast("事件已添加", "success");
-                  }} className="bg-[#F7E1E2] text-[#1F2937] px-4 py-1.5 rounded-xl text-sm hover:bg-[#EBCDCF] font-medium transition-all duration-200">添加</button>
+                  }} className="bg-[#0071e3] text-white px-4 py-1.5 rounded-xl text-sm hover:bg-[#005bb5] font-medium transition-all duration-200">添加</button>
                 </div>
               </div>
             )}
@@ -2014,23 +2014,23 @@ export default function Home() {
         {/* ===== EMPOWERMENT TAB ===== */}
         {activeTab === "empowerment" && (
           <div className="space-y-6 animate-fade-slide-up">
-            <div className="bg-white rounded-3xl shadow-[0_4px_40px_rgba(0,0,0,0.03)] p-8">
+            <div className="bg-white rounded-2xl shadow-[0_2px_12px_rgba(0,0,0,0.08)] p-8">
               <div className="flex items-center justify-between mb-4">
-                <h2 className="text-lg font-semibold text-[#1F2937]">赋能分析</h2>
-                <button onClick={() => setShowNewEmpowerment(!showNewEmpowerment)} className="bg-[#F7E1E2] text-[#1F2937] px-4 py-2 rounded-xl text-sm font-medium hover:bg-[#EBCDCF] transition-all duration-200">
+                <h2 className="text-lg font-semibold text-[#1d1d1f]">赋能分析</h2>
+                <button onClick={() => setShowNewEmpowerment(!showNewEmpowerment)} className="bg-[#0071e3] text-white px-4 py-2 rounded-xl text-sm font-medium hover:bg-[#005bb5] transition-all duration-200">
                   {showNewEmpowerment ? "取消" : "+ 新增赋能事件"}
                 </button>
               </div>
               {showNewEmpowerment && (
                 <div className="mb-6 p-4 bg-gray-50 rounded-2xl space-y-3">
                   <div className="grid grid-cols-3 gap-3">
-                    <div><label className="text-xs text-[#9CA3AF]">事件名称</label><input id="emp-name" className="w-full border-0 bg-white rounded-xl px-3 py-1.5 text-sm focus:ring-2 focus:ring-[#F7E1E2] focus:outline-none" placeholder="如: 新品上市推广" /></div>
-                    <div><label className="text-xs text-[#9CA3AF]">开始日期</label><input id="emp-start" type="date" className="w-full border-0 bg-white rounded-xl px-3 py-1.5 text-sm focus:ring-2 focus:ring-[#F7E1E2] focus:outline-none" /></div>
-                    <div><label className="text-xs text-[#9CA3AF]">结束日期</label><input id="emp-end" type="date" className="w-full border-0 bg-white rounded-xl px-3 py-1.5 text-sm focus:ring-2 focus:ring-[#F7E1E2] focus:outline-none" /></div>
+                    <div><label className="text-xs text-[#86868b]">事件名称</label><input id="emp-name" className="w-full border-0 bg-white rounded-xl px-3 py-1.5 text-sm focus:ring-2 focus:ring-[#0071e3] focus:outline-none" placeholder="如: 新品上市推广" /></div>
+                    <div><label className="text-xs text-[#86868b]">开始日期</label><input id="emp-start" type="date" className="w-full border-0 bg-white rounded-xl px-3 py-1.5 text-sm focus:ring-2 focus:ring-[#0071e3] focus:outline-none" /></div>
+                    <div><label className="text-xs text-[#86868b]">结束日期</label><input id="emp-end" type="date" className="w-full border-0 bg-white rounded-xl px-3 py-1.5 text-sm focus:ring-2 focus:ring-[#0071e3] focus:outline-none" /></div>
                   </div>
                   <div className="grid grid-cols-2 gap-3">
-                    <div><label className="text-xs text-[#9CA3AF]">类型</label><select id="emp-type" className="w-full border-0 bg-white rounded-xl px-3 py-1.5 text-sm focus:ring-2 focus:ring-[#F7E1E2] focus:outline-none"><option value="market">市场赋能</option><option value="operation">运营赋能</option></select></div>
-                    <div><label className="text-xs text-[#9CA3AF]">投入成本 (RM)</label><input id="emp-cost" type="number" className="w-full border-0 bg-white rounded-xl px-3 py-1.5 text-sm focus:ring-2 focus:ring-[#F7E1E2] focus:outline-none" placeholder="0" /></div>
+                    <div><label className="text-xs text-[#86868b]">类型</label><select id="emp-type" className="w-full border-0 bg-white rounded-xl px-3 py-1.5 text-sm focus:ring-2 focus:ring-[#0071e3] focus:outline-none"><option value="market">市场赋能</option><option value="operation">运营赋能</option></select></div>
+                    <div><label className="text-xs text-[#86868b]">投入成本 (RM)</label><input id="emp-cost" type="number" className="w-full border-0 bg-white rounded-xl px-3 py-1.5 text-sm focus:ring-2 focus:ring-[#0071e3] focus:outline-none" placeholder="0" /></div>
                   </div>
                   <button onClick={async () => {
                     const name = (document.getElementById("emp-name") as HTMLInputElement)?.value;
@@ -2044,32 +2044,32 @@ export default function Home() {
                     setEmpowermentEvents(events);
                     setShowNewEmpowerment(false);
                     showToast("赋能事件已添加", "success");
-                  }} className="bg-[#F7E1E2] text-[#1F2937] px-4 py-2 rounded-xl text-sm font-medium hover:bg-[#EBCDCF] transition-all duration-200">保存</button>
+                  }} className="bg-[#0071e3] text-white px-4 py-2 rounded-xl text-sm font-medium hover:bg-[#005bb5] transition-all duration-200">保存</button>
                 </div>
               )}
               {empowermentEvents.length === 0 ? (
-                <p className="text-sm text-[#9CA3AF]">暂无赋能事件，点击上方按钮添加</p>
+                <p className="text-sm text-[#86868b]">暂无赋能事件，点击上方按钮添加</p>
               ) : (
                 <div className="space-y-4">
                   {empowermentEvents.map((ev) => (
                     <div key={ev.id} className="p-4 bg-gray-50 rounded-2xl">
                       <div className="flex items-center justify-between mb-2">
                         <div>
-                          <span className="text-sm font-semibold text-[#1F2937]">{ev.eventName}</span>
-                          <span className="ml-2 text-xs px-2 py-0.5 rounded-full bg-[#F7E1E2] text-[#1F2937]">{ev.eventType}</span>
+                          <span className="text-sm font-semibold text-[#1d1d1f]">{ev.eventName}</span>
+                          <span className="ml-2 text-xs px-2 py-0.5 rounded-full bg-[#0071e3] text-white">{ev.eventType}</span>
                         </div>
                         <div className="flex gap-2">
                           <button onClick={async () => {
                             const res = await fetch("/api/empowerment-review", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ eventId: ev.id }) });
                             if (res.ok) { const events = await getEmpowermentEvents(); setEmpowermentEvents(events); showToast("ROI 分析完成", "success"); } else showToast("分析失败", "error");
-                          }} className="text-xs text-[#d4727a] hover:text-[#1F2937] font-medium transition-colors">AI 分析 ROI</button>
+                          }} className="text-xs text-[#0071e3] hover:text-[#1d1d1f] font-medium transition-colors">AI 分析 ROI</button>
                           <button onClick={async () => { if (ev.id) { await deleteEmpowermentEvent(ev.id); setEmpowermentEvents((prev) => prev.filter((x) => x.id !== ev.id)); showToast("已删除", "info"); } }} className="text-xs text-red-400 hover:text-red-600 transition-colors">删除</button>
                         </div>
                       </div>
-                      <p className="text-xs text-[#9CA3AF]">{ev.startDate} ~ {ev.endDate} | 投入: RM {ev.cost?.toLocaleString() || 0}</p>
+                      <p className="text-xs text-[#86868b]">{ev.startDate} ~ {ev.endDate} | 投入: RM {ev.cost?.toLocaleString() || 0}</p>
                       {ev.reviewJson && (
-                        <div className="mt-3 p-3 bg-white rounded-xl text-xs text-[#4B5563]">
-                          <p className="font-medium text-[#1F2937] mb-1">ROI 分析结果</p>
+                        <div className="mt-3 p-3 bg-white rounded-xl text-xs text-[#1d1d1f]/80">
+                          <p className="font-medium text-[#1d1d1f] mb-1">ROI 分析结果</p>
                           <p>{typeof ev.reviewJson === "string" ? ev.reviewJson : JSON.stringify(ev.reviewJson, null, 2)}</p>
                         </div>
                       )}
@@ -2083,13 +2083,13 @@ export default function Home() {
         {/* ===== TRENDS TAB ===== */}
         {activeTab === "trends" && (
           <div className="space-y-6 animate-fade-slide-up">
-            <div className="bg-white rounded-3xl shadow-[0_4px_40px_rgba(0,0,0,0.03)] p-8">
-              <h2 className="text-lg font-semibold text-[#1F2937] mb-4">单品销售趋势</h2>
+            <div className="bg-white rounded-2xl shadow-[0_2px_12px_rgba(0,0,0,0.08)] p-8">
+              <h2 className="text-lg font-semibold text-[#1d1d1f] mb-4">单品销售趋势</h2>
               <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-4">
                 {/* Product multi-select dropdown */}
                 <div className="md:col-span-2 relative">
-                  <label className="text-sm font-medium text-[#1F2937]">选择产品</label>
-                  <button onClick={() => setTrendDropdownOpen(!trendDropdownOpen)} className="mt-1 w-full border-0 bg-gray-50 rounded-xl px-3 py-2 text-sm text-left focus:ring-2 focus:ring-[#F7E1E2] focus:outline-none transition-all duration-200">
+                  <label className="text-sm font-medium text-[#1d1d1f]">选择产品</label>
+                  <button onClick={() => setTrendDropdownOpen(!trendDropdownOpen)} className="mt-1 w-full border-0 bg-gray-50 rounded-xl px-3 py-2 text-sm text-left focus:ring-2 focus:ring-[#0071e3] focus:outline-none transition-all duration-200">
                     {trendSelectedProducts.length === 0 ? "点击选择产品..." : `已选 ${trendSelectedProducts.length} 个产品`}
                   </button>
                   {trendDropdownOpen && (
@@ -2104,20 +2104,20 @@ export default function Home() {
                         </label>
                       ))}
                       <div className="sticky bottom-0 bg-white border-t p-2 flex gap-2">
-                        <button onClick={() => setTrendSelectedProducts(products.slice(0, 5).map((p) => p.name))} className="text-xs text-[#d4727a] hover:underline">TOP 5</button>
-                        <button onClick={() => setTrendSelectedProducts([])} className="text-xs text-[#9CA3AF] hover:underline">清空</button>
-                        <button onClick={() => setTrendDropdownOpen(false)} className="text-xs ml-auto text-[#1F2937] font-medium">确定</button>
+                        <button onClick={() => setTrendSelectedProducts(products.slice(0, 5).map((p) => p.name))} className="text-xs text-[#0071e3] hover:underline">TOP 5</button>
+                        <button onClick={() => setTrendSelectedProducts([])} className="text-xs text-[#86868b] hover:underline">清空</button>
+                        <button onClick={() => setTrendDropdownOpen(false)} className="text-xs ml-auto text-[#1d1d1f] font-medium">确定</button>
                       </div>
                     </div>
                   )}
                 </div>
                 <div>
-                  <label className="text-sm font-medium text-[#1F2937]">开始日期</label>
-                  <input type="date" value={trendStartDate} onChange={(e) => setTrendStartDate(e.target.value)} className="mt-1 w-full border-0 bg-gray-50 rounded-xl px-3 py-2 text-sm focus:ring-2 focus:ring-[#F7E1E2] focus:outline-none transition-all duration-200" />
+                  <label className="text-sm font-medium text-[#1d1d1f]">开始日期</label>
+                  <input type="date" value={trendStartDate} onChange={(e) => setTrendStartDate(e.target.value)} className="mt-1 w-full border-0 bg-gray-50 rounded-xl px-3 py-2 text-sm focus:ring-2 focus:ring-[#0071e3] focus:outline-none transition-all duration-200" />
                 </div>
                 <div>
-                  <label className="text-sm font-medium text-[#1F2937]">结束日期</label>
-                  <input type="date" value={trendEndDate} onChange={(e) => setTrendEndDate(e.target.value)} className="mt-1 w-full border-0 bg-gray-50 rounded-xl px-3 py-2 text-sm focus:ring-2 focus:ring-[#F7E1E2] focus:outline-none transition-all duration-200" />
+                  <label className="text-sm font-medium text-[#1d1d1f]">结束日期</label>
+                  <input type="date" value={trendEndDate} onChange={(e) => setTrendEndDate(e.target.value)} className="mt-1 w-full border-0 bg-gray-50 rounded-xl px-3 py-2 text-sm focus:ring-2 focus:ring-[#0071e3] focus:outline-none transition-all duration-200" />
                 </div>
               </div>
               <button onClick={async () => {
@@ -2129,7 +2129,7 @@ export default function Home() {
                   if (data.length === 0) showToast("该时间段无销售数据", "info");
                 } catch { showToast("查询失败", "error"); }
                 finally { setTrendLoading(false); }
-              }} disabled={trendLoading || trendSelectedProducts.length === 0} className="bg-[#F7E1E2] text-[#1F2937] px-6 py-2.5 rounded-xl hover:bg-[#EBCDCF] hover:scale-[1.03] active:scale-[0.97] disabled:opacity-50 font-medium transition-all duration-200">
+              }} disabled={trendLoading || trendSelectedProducts.length === 0} className="bg-[#0071e3] text-white px-6 py-2.5 rounded-xl hover:bg-[#005bb5] hover:scale-[1.03] active:scale-[0.97] disabled:opacity-50 font-medium transition-all duration-200">
                 {trendLoading ? "查询中..." : "查询趋势"}
               </button>
             </div>
@@ -2138,9 +2138,9 @@ export default function Home() {
               // Prepare chart data: pivot by date
               const dateSet = new Set(trendData.map((d) => d.date));
               const dates = Array.from(dateSet).sort();
-              const COLORS = ["#d4727a", "#4B9CD3", "#F5A623", "#7B68EE", "#2ECC71", "#E74C3C", "#9B59B6", "#1ABC9C", "#E67E22", "#34495E"];
+              const COLORS = ["#0071e3", "#34C759", "#FF9500", "#AF52DE", "#FF3B30", "#5AC8FA", "#FF2D55", "#5856D6", "#FFCC00", "#1d1d1f"];
               const getDayType = (dow: number) => (dow === 0 || dow === 6) ? "weekend" : dow === 5 ? "friday" : "monThu";
-              const dayTypeColor: Record<string, string> = { monThu: "#4B9CD3", friday: "#F5A623", weekend: "#F7A8B8" };
+              const dayTypeColor: Record<string, string> = { monThu: "#0071e3", friday: "#FF9500", weekend: "#FF3B30" };
               const dayTypeLabel: Record<string, string> = { monThu: "周一至周四", friday: "周五", weekend: "周末" };
 
               const chartData = dates.map((date) => {
@@ -2168,9 +2168,9 @@ export default function Home() {
 
               return (
                 <>
-                  <div className="bg-white rounded-3xl shadow-[0_4px_40px_rgba(0,0,0,0.03)] p-8">
+                  <div className="bg-white rounded-2xl shadow-[0_2px_12px_rgba(0,0,0,0.08)] p-8">
                     <div className="flex items-center justify-between mb-4">
-                      <h3 className="text-md font-semibold text-[#1F2937]">销量趋势图 — {dayTypeLabel[trendDayTypeFilter]}</h3>
+                      <h3 className="text-md font-semibold text-[#1d1d1f]">销量趋势图 — {dayTypeLabel[trendDayTypeFilter]}</h3>
                       <div className="flex gap-1 bg-gray-100 rounded-full p-1">
                         {(["monThu", "friday", "weekend"] as const).map((key) => (
                           <button
@@ -2179,7 +2179,7 @@ export default function Home() {
                             className={`px-3 py-1 rounded-full text-xs font-medium transition-all duration-200 ${
                               trendDayTypeFilter === key
                                 ? "text-white shadow-sm"
-                                : "text-[#6B7280] hover:text-[#1F2937]"
+                                : "text-[#86868b] hover:text-[#1d1d1f]"
                             }`}
                             style={trendDayTypeFilter === key ? { backgroundColor: dayTypeColor[key] } : undefined}
                           >
@@ -2190,13 +2190,13 @@ export default function Home() {
                     </div>
                     <TrendChart data={chartData.filter((d) => d.dayType === trendDayTypeFilter)} productNames={trendSelectedProducts} colors={COLORS} dayTypeColor={dayTypeColor} />
                   </div>
-                  <div className="bg-white rounded-3xl shadow-[0_4px_40px_rgba(0,0,0,0.03)] p-8">
-                    <h3 className="text-md font-semibold text-[#1F2937] mb-4">按日型分类平均销量</h3>
+                  <div className="bg-white rounded-2xl shadow-[0_2px_12px_rgba(0,0,0,0.08)] p-8">
+                    <h3 className="text-md font-semibold text-[#1d1d1f] mb-4">按日型分类平均销量</h3>
                     <div className="overflow-x-auto">
                       <table className="w-full text-sm">
                         <thead>
                           <tr className="border-b border-gray-100">
-                            <th className="text-left py-2 px-3 text-[#9CA3AF] font-medium">产品</th>
+                            <th className="text-left py-2 px-3 text-[#86868b] font-medium">产品</th>
                             <th className="text-right py-2 px-3 font-medium" style={{ color: dayTypeColor.monThu }}>周一至周四</th>
                             <th className="text-right py-2 px-3 font-medium" style={{ color: dayTypeColor.friday }}>周五</th>
                             <th className="text-right py-2 px-3 font-medium" style={{ color: dayTypeColor.weekend }}>周末</th>
@@ -2207,8 +2207,8 @@ export default function Home() {
                             const s = summary[pName];
                             const avg = (d: { sum: number; count: number }) => d.count > 0 ? (d.sum / d.count).toFixed(1) : "—";
                             return (
-                              <tr key={pName} className="border-b border-gray-50 hover:bg-[#F7E1E2]/10">
-                                <td className="py-2 px-3 font-medium text-[#1F2937]">{pName}</td>
+                              <tr key={pName} className="border-b border-gray-50 hover:bg-[#0071e3]/5">
+                                <td className="py-2 px-3 font-medium text-[#1d1d1f]">{pName}</td>
                                 <td className="py-2 px-3 text-right">{avg(s.monThu)}</td>
                                 <td className="py-2 px-3 text-right">{avg(s.friday)}</td>
                                 <td className="py-2 px-3 text-right">{avg(s.weekend)}</td>
@@ -2227,18 +2227,18 @@ export default function Home() {
         {/* ===== SETTINGS TAB ===== */}
         {activeTab === "settings" && (
           <div className="space-y-6 animate-fade-slide-up">
-            <div className="bg-white rounded-3xl shadow-[0_4px_40px_rgba(0,0,0,0.03)] p-4">
+            <div className="bg-white rounded-2xl shadow-[0_2px_12px_rgba(0,0,0,0.08)] p-4">
               <div className="flex gap-1 bg-gray-50 rounded-full p-1 w-fit mx-auto">
                 {([["data", "数据导入"], ["business", "业务规则"], ["schedule", "出货时间表"], ["alias", "产品别名"], ["holiday", "节假日"]] as const).map(([id, label]) => (
-                  <button key={id} onClick={() => { setSettingsTab(id); if (id !== "data") loadRulesData(); }} className={`px-4 py-1.5 text-sm font-medium rounded-full transition-all duration-300 ${settingsTab === id ? "bg-[#F7E1E2] text-[#1F2937] shadow-sm" : "text-[#9CA3AF] hover:text-[#1F2937]"}`}>{label}</button>
+                  <button key={id} onClick={() => { setSettingsTab(id); if (id !== "data") loadRulesData(); }} className={`px-4 py-1.5 text-sm font-medium rounded-full transition-all duration-300 ${settingsTab === id ? "bg-[#0071e3] text-white shadow-sm" : "text-[#86868b] hover:text-[#1d1d1f]"}`}>{label}</button>
                 ))}
               </div>
             </div>
 
             {settingsTab === "data" && (
               <>
-                <div className="bg-white rounded-3xl shadow-[0_4px_40px_rgba(0,0,0,0.03)] p-8">
-                  <h2 className="text-lg font-semibold text-[#1F2937] mb-4">数据库状态</h2>
+                <div className="bg-white rounded-2xl shadow-[0_2px_12px_rgba(0,0,0,0.08)] p-8">
+                  <h2 className="text-lg font-semibold text-[#1d1d1f] mb-4">数据库状态</h2>
                   {dataLoaded ? (
                     <div className="bg-green-50/70 rounded-2xl p-4">
                       <p className="text-green-800 font-medium text-sm">数据已从数据库加载</p>
@@ -2249,18 +2249,18 @@ export default function Home() {
                       </div>
                     </div>
                   ) : loading ? (
-                    <div className="bg-[#F7E1E2]/30 rounded-2xl p-4"><p className="text-[#1F2937] text-sm">正在从数据库加载数据...</p></div>
+                    <div className="bg-[#0071e3]/15 rounded-2xl p-4"><p className="text-[#1d1d1f] text-sm">正在从数据库加载数据...</p></div>
                   ) : (
                     <div className="bg-amber-50/70 rounded-2xl p-4"><p className="text-amber-800 text-sm">数据库暂无数据，请先从 Excel 导入。</p></div>
                   )}
                 </div>
-                <div className="bg-white rounded-3xl shadow-[0_4px_40px_rgba(0,0,0,0.03)] p-8">
+                <div className="bg-white rounded-2xl shadow-[0_2px_12px_rgba(0,0,0,0.08)] p-8">
                   <div className="flex items-center justify-between mb-4">
                     <div>
-                      <h2 className="text-lg font-semibold text-[#1F2937]">从 Excel 重新导入</h2>
-                      <p className="text-sm text-[#9CA3AF] mt-1">从 data 目录重新导入产品价格、销售数据和策略数据到数据库（将覆盖现有数据）。</p>
+                      <h2 className="text-lg font-semibold text-[#1d1d1f]">从 Excel 重新导入</h2>
+                      <p className="text-sm text-[#86868b] mt-1">从 data 目录重新导入产品价格、销售数据和策略数据到数据库（将覆盖现有数据）。</p>
                     </div>
-                    <button onClick={handleAutoImport} disabled={loading} className="bg-[#F7E1E2] text-[#1F2937] px-6 py-2.5 rounded-xl hover:bg-[#EBCDCF] hover:scale-[1.03] active:scale-[0.97] disabled:opacity-50 font-medium transition-all duration-200">从 Excel 重新导入</button>
+                    <button onClick={handleAutoImport} disabled={loading} className="bg-[#0071e3] text-white px-6 py-2.5 rounded-xl hover:bg-[#005bb5] hover:scale-[1.03] active:scale-[0.97] disabled:opacity-50 font-medium transition-all duration-200">从 Excel 重新导入</button>
                   </div>
                   {importStatus.products && (
                     <div className="mt-6 space-y-3">
@@ -2272,27 +2272,27 @@ export default function Home() {
                   )}
                 </div>
                 {products.length > 0 && (
-                  <div className="bg-white rounded-3xl shadow-[0_4px_40px_rgba(0,0,0,0.03)] p-8">
-                    <h3 className="text-md font-semibold text-[#1F2937] mb-3">已导入产品 ({products.length} 个)</h3>
+                  <div className="bg-white rounded-2xl shadow-[0_2px_12px_rgba(0,0,0,0.08)] p-8">
+                    <h3 className="text-md font-semibold text-[#1d1d1f] mb-3">已导入产品 ({products.length} 个)</h3>
                     <div className="overflow-x-auto rounded-xl">
                       <table className="min-w-full text-sm">
                         <thead className="bg-gray-50/50">
                           <tr>
-                            <th className="px-3 py-2 text-left text-[#9CA3AF] font-medium text-xs">品类</th>
-                            <th className="px-3 py-2 text-left text-[#9CA3AF] font-medium text-xs">品名</th>
-                            <th className="px-3 py-2 text-right text-[#9CA3AF] font-medium text-xs">单价</th>
-                            <th className="px-3 py-2 text-right text-[#9CA3AF] font-medium text-xs">倍数</th>
-                            <th className="px-3 py-2 text-center text-[#9CA3AF] font-medium text-xs">类型</th>
+                            <th className="px-3 py-2 text-left text-[#86868b] font-medium text-xs">品类</th>
+                            <th className="px-3 py-2 text-left text-[#86868b] font-medium text-xs">品名</th>
+                            <th className="px-3 py-2 text-right text-[#86868b] font-medium text-xs">单价</th>
+                            <th className="px-3 py-2 text-right text-[#86868b] font-medium text-xs">倍数</th>
+                            <th className="px-3 py-2 text-center text-[#86868b] font-medium text-xs">类型</th>
                           </tr>
                         </thead>
                         <tbody>
                           {products.map((p) => (
-                            <tr key={p.id} className="hover:bg-[#F7E1E2]/20 transition-colors duration-200 border-b border-gray-50">
+                            <tr key={p.id} className="hover:bg-[#0071e3]/5 transition-colors duration-200 border-b border-gray-50">
                               <td className="px-3 py-2">{p.category}</td>
                               <td className="px-3 py-2 font-medium">{p.name}</td>
                               <td className="px-3 py-2 text-right">{p.price}</td>
                               <td className="px-3 py-2 text-right">{p.packMultiple}</td>
-                              <td className="px-3 py-2 text-center"><span className={`px-2 py-0.5 rounded-full text-xs ${p.unitType === "batch" ? "bg-[#F7E1E2] text-[#1F2937]" : "bg-green-100 text-green-700"}`}>{p.unitType === "batch" ? "整批" : "按个"}</span></td>
+                              <td className="px-3 py-2 text-center"><span className={`px-2 py-0.5 rounded-full text-xs ${p.unitType === "batch" ? "bg-[#0071e3] text-white" : "bg-green-100 text-green-700"}`}>{p.unitType === "batch" ? "整批" : "按个"}</span></td>
                             </tr>
                           ))}
                         </tbody>
@@ -2306,32 +2306,32 @@ export default function Home() {
                     <div className="space-y-4">
                       <div className="grid grid-cols-2 gap-4">
                         <div>
-                          <label className="text-sm font-medium text-[#1F2937]">首月基础营业额</label>
+                          <label className="text-sm font-medium text-[#1d1d1f]">首月基础营业额</label>
                           <input
                             type="number"
                             key={`rev-${businessRulesState?.firstMonthRevenue}`}
                             defaultValue={businessRulesState?.firstMonthRevenue ?? 1640000}
                             onBlur={(e) => handleSaveBusinessRule("firstMonthRevenue", Number(e.target.value))}
-                            className="mt-1 w-full border-0 bg-gray-50 rounded-xl px-3 py-2 text-sm focus:ring-2 focus:ring-[#F7E1E2] focus:outline-none transition-all duration-200"
+                            className="mt-1 w-full border-0 bg-gray-50 rounded-xl px-3 py-2 text-sm focus:ring-2 focus:ring-[#0071e3] focus:outline-none transition-all duration-200"
                           />
                         </div>
                         <div>
-                          <label className="text-sm font-medium text-[#1F2937]">总赋能增幅</label>
+                          <label className="text-sm font-medium text-[#1d1d1f]">总赋能增幅</label>
                           <input
                             type="number"
                             step="0.01"
                             key={`enh-${businessRulesState?.totalEnhancement}`}
                             defaultValue={businessRulesState?.totalEnhancement ?? 0.06}
                             onBlur={(e) => handleSaveBusinessRule("totalEnhancement", Number(e.target.value))}
-                            className="mt-1 w-full border-0 bg-gray-50 rounded-xl px-3 py-2 text-sm focus:ring-2 focus:ring-[#F7E1E2] focus:outline-none transition-all duration-200"
+                            className="mt-1 w-full border-0 bg-gray-50 rounded-xl px-3 py-2 text-sm focus:ring-2 focus:ring-[#0071e3] focus:outline-none transition-all duration-200"
                           />
                         </div>
                       </div>
                       <div>
-                        <label className="text-sm font-medium text-[#1F2937]">日权重配置</label>
+                        <label className="text-sm font-medium text-[#1d1d1f]">日权重配置</label>
                         <div className="grid grid-cols-3 gap-3 mt-1">
                           <div>
-                            <span className="text-xs text-[#9CA3AF]">周一至周四</span>
+                            <span className="text-xs text-[#86868b]">周一至周四</span>
                             <input type="number" step="0.01"
                               key={`wt-mtd-${businessRulesState?.weekdayWeights?.mondayToThursday}`}
                               defaultValue={businessRulesState?.weekdayWeights?.mondayToThursday ?? 1.0}
@@ -2339,10 +2339,10 @@ export default function Home() {
                                 const w = businessRulesState?.weekdayWeights ?? { mondayToThursday: 1.0, friday: 1.2, weekend: 1.35 };
                                 handleSaveBusinessRule("weekdayWeights", { ...w, mondayToThursday: Number(e.target.value) });
                               }}
-                              className="w-full border-0 bg-gray-50 rounded-xl px-2 py-1.5 text-sm focus:ring-2 focus:ring-[#F7E1E2] focus:outline-none transition-all duration-200" />
+                              className="w-full border-0 bg-gray-50 rounded-xl px-2 py-1.5 text-sm focus:ring-2 focus:ring-[#0071e3] focus:outline-none transition-all duration-200" />
                           </div>
                           <div>
-                            <span className="text-xs text-[#9CA3AF]">周五</span>
+                            <span className="text-xs text-[#86868b]">周五</span>
                             <input type="number" step="0.01"
                               key={`wt-fri-${businessRulesState?.weekdayWeights?.friday}`}
                               defaultValue={businessRulesState?.weekdayWeights?.friday ?? 1.2}
@@ -2350,10 +2350,10 @@ export default function Home() {
                                 const w = businessRulesState?.weekdayWeights ?? { mondayToThursday: 1.0, friday: 1.2, weekend: 1.35 };
                                 handleSaveBusinessRule("weekdayWeights", { ...w, friday: Number(e.target.value) });
                               }}
-                              className="w-full border-0 bg-gray-50 rounded-xl px-2 py-1.5 text-sm focus:ring-2 focus:ring-[#F7E1E2] focus:outline-none transition-all duration-200" />
+                              className="w-full border-0 bg-gray-50 rounded-xl px-2 py-1.5 text-sm focus:ring-2 focus:ring-[#0071e3] focus:outline-none transition-all duration-200" />
                           </div>
                           <div>
-                            <span className="text-xs text-[#9CA3AF]">周末</span>
+                            <span className="text-xs text-[#86868b]">周末</span>
                             <input type="number" step="0.01"
                               key={`wt-wkd-${businessRulesState?.weekdayWeights?.weekend}`}
                               defaultValue={businessRulesState?.weekdayWeights?.weekend ?? 1.35}
@@ -2361,15 +2361,15 @@ export default function Home() {
                                 const w = businessRulesState?.weekdayWeights ?? { mondayToThursday: 1.0, friday: 1.2, weekend: 1.35 };
                                 handleSaveBusinessRule("weekdayWeights", { ...w, weekend: Number(e.target.value) });
                               }}
-                              className="w-full border-0 bg-gray-50 rounded-xl px-2 py-1.5 text-sm focus:ring-2 focus:ring-[#F7E1E2] focus:outline-none transition-all duration-200" />
+                              className="w-full border-0 bg-gray-50 rounded-xl px-2 py-1.5 text-sm focus:ring-2 focus:ring-[#0071e3] focus:outline-none transition-all duration-200" />
                           </div>
                         </div>
                       </div>
                       <div>
-                        <label className="text-sm font-medium text-[#1F2937]">出货公式</label>
+                        <label className="text-sm font-medium text-[#1d1d1f]">出货公式</label>
                         <div className="grid grid-cols-3 gap-3 mt-1">
                           <div>
-                            <span className="text-xs text-[#9CA3AF]">品鉴损耗率</span>
+                            <span className="text-xs text-[#86868b]">品鉴损耗率</span>
                             <input type="number" step="0.01"
                               key={`sf-tw-${businessRulesState?.shipmentFormula?.tastingWasteRate}`}
                               defaultValue={businessRulesState?.shipmentFormula?.tastingWasteRate ?? 0.06}
@@ -2377,10 +2377,10 @@ export default function Home() {
                                 const sf = businessRulesState?.shipmentFormula ?? { tastingWasteRate: 0.06, waterBarRate: 0.11, shipmentRate: 0.95 };
                                 handleSaveBusinessRule("shipmentFormula", { ...sf, tastingWasteRate: Number(e.target.value) });
                               }}
-                              className="w-full border-0 bg-gray-50 rounded-xl px-2 py-1.5 text-sm focus:ring-2 focus:ring-[#F7E1E2] focus:outline-none transition-all duration-200" />
+                              className="w-full border-0 bg-gray-50 rounded-xl px-2 py-1.5 text-sm focus:ring-2 focus:ring-[#0071e3] focus:outline-none transition-all duration-200" />
                           </div>
                           <div>
-                            <span className="text-xs text-[#9CA3AF]">水吧占比</span>
+                            <span className="text-xs text-[#86868b]">水吧占比</span>
                             <input type="number" step="0.01"
                               key={`sf-wb-${businessRulesState?.shipmentFormula?.waterBarRate}`}
                               defaultValue={businessRulesState?.shipmentFormula?.waterBarRate ?? 0.11}
@@ -2388,10 +2388,10 @@ export default function Home() {
                                 const sf = businessRulesState?.shipmentFormula ?? { tastingWasteRate: 0.06, waterBarRate: 0.11, shipmentRate: 0.95 };
                                 handleSaveBusinessRule("shipmentFormula", { ...sf, waterBarRate: Number(e.target.value) });
                               }}
-                              className="w-full border-0 bg-gray-50 rounded-xl px-2 py-1.5 text-sm focus:ring-2 focus:ring-[#F7E1E2] focus:outline-none transition-all duration-200" />
+                              className="w-full border-0 bg-gray-50 rounded-xl px-2 py-1.5 text-sm focus:ring-2 focus:ring-[#0071e3] focus:outline-none transition-all duration-200" />
                           </div>
                           <div>
-                            <span className="text-xs text-[#9CA3AF]">出货率</span>
+                            <span className="text-xs text-[#86868b]">出货率</span>
                             <input type="number" step="0.01"
                               key={`sf-sr-${businessRulesState?.shipmentFormula?.shipmentRate}`}
                               defaultValue={businessRulesState?.shipmentFormula?.shipmentRate ?? 0.95}
@@ -2399,11 +2399,11 @@ export default function Home() {
                                 const sf = businessRulesState?.shipmentFormula ?? { tastingWasteRate: 0.06, waterBarRate: 0.11, shipmentRate: 0.95 };
                                 handleSaveBusinessRule("shipmentFormula", { ...sf, shipmentRate: Number(e.target.value) });
                               }}
-                              className="w-full border-0 bg-gray-50 rounded-xl px-2 py-1.5 text-sm focus:ring-2 focus:ring-[#F7E1E2] focus:outline-none transition-all duration-200" />
+                              className="w-full border-0 bg-gray-50 rounded-xl px-2 py-1.5 text-sm focus:ring-2 focus:ring-[#0071e3] focus:outline-none transition-all duration-200" />
                           </div>
                         </div>
                       </div>
-                      {rulesSaving && <p className="text-sm text-[#d4727a] font-medium">保存中...</p>}
+                      {rulesSaving && <p className="text-sm text-[#0071e3] font-medium">保存中...</p>}
                     </div>
                   )}
 
@@ -2412,27 +2412,27 @@ export default function Home() {
                     <div className="space-y-3">
                       <div className="flex gap-2 items-end">
                         <div className="flex-1">
-                          <label className="text-xs text-[#9CA3AF]">产品名</label>
+                          <label className="text-xs text-[#86868b]">产品名</label>
                           <input
                             value={editingScheduleProduct}
                             onChange={(e) => setEditingScheduleProduct(e.target.value)}
-                            className="w-full border-0 bg-gray-50 rounded-xl px-3 py-1.5 text-sm focus:ring-2 focus:ring-[#F7E1E2] focus:outline-none transition-all duration-200"
+                            className="w-full border-0 bg-gray-50 rounded-xl px-3 py-1.5 text-sm focus:ring-2 focus:ring-[#0071e3] focus:outline-none transition-all duration-200"
                             placeholder="产品名称"
                           />
                         </div>
                         <div className="flex-1">
-                          <label className="text-xs text-[#9CA3AF]">时段（逗号分隔）</label>
+                          <label className="text-xs text-[#86868b]">时段（逗号分隔）</label>
                           <input
                             value={editingScheduleSlots}
                             onChange={(e) => setEditingScheduleSlots(e.target.value)}
-                            className="w-full border-0 bg-gray-50 rounded-xl px-3 py-1.5 text-sm focus:ring-2 focus:ring-[#F7E1E2] focus:outline-none transition-all duration-200"
+                            className="w-full border-0 bg-gray-50 rounded-xl px-3 py-1.5 text-sm focus:ring-2 focus:ring-[#0071e3] focus:outline-none transition-all duration-200"
                             placeholder="11:00, 15:00, 18:00"
                           />
                         </div>
                         <button
                           onClick={handleSaveSchedule}
                           disabled={rulesSaving}
-                          className="bg-[#F7E1E2] text-[#1F2937] px-4 py-1.5 rounded-xl text-sm hover:bg-[#EBCDCF] hover:scale-[1.03] active:scale-[0.97] disabled:opacity-50 font-medium transition-all duration-200"
+                          className="bg-[#0071e3] text-white px-4 py-1.5 rounded-xl text-sm hover:bg-[#005bb5] hover:scale-[1.03] active:scale-[0.97] disabled:opacity-50 font-medium transition-all duration-200"
                         >
                           保存
                         </button>
@@ -2441,20 +2441,20 @@ export default function Home() {
                         <table className="min-w-full text-sm">
                           <thead className="bg-gray-50/50 sticky top-0">
                             <tr>
-                              <th className="px-3 py-2 text-left text-[#9CA3AF] font-medium text-xs">产品</th>
-                              <th className="px-3 py-2 text-left text-[#9CA3AF] font-medium text-xs">出货时段</th>
-                              <th className="px-3 py-2 text-center text-[#9CA3AF] font-medium text-xs">操作</th>
+                              <th className="px-3 py-2 text-left text-[#86868b] font-medium text-xs">产品</th>
+                              <th className="px-3 py-2 text-left text-[#86868b] font-medium text-xs">出货时段</th>
+                              <th className="px-3 py-2 text-center text-[#86868b] font-medium text-xs">操作</th>
                             </tr>
                           </thead>
                           <tbody>
                             {Object.entries(fixedSchedule).map(([name, slots]) => (
-                              <tr key={name} className="hover:bg-[#F7E1E2]/20 transition-colors duration-200 border-b border-gray-50">
+                              <tr key={name} className="hover:bg-[#0071e3]/5 transition-colors duration-200 border-b border-gray-50">
                                 <td className="px-3 py-1.5 font-medium text-xs">{name}</td>
-                                <td className="px-3 py-1.5 text-xs text-[#9CA3AF]">{slots.join(", ")}</td>
+                                <td className="px-3 py-1.5 text-xs text-[#86868b]">{slots.join(", ")}</td>
                                 <td className="px-3 py-1.5 text-center">
                                   <button
                                     onClick={() => { setEditingScheduleProduct(name); setEditingScheduleSlots(slots.join(", ")); }}
-                                    className="text-[#1F2937] text-xs hover:text-[#d4727a] transition-colors duration-200"
+                                    className="text-[#1d1d1f] text-xs hover:text-[#0071e3] transition-colors duration-200"
                                   >
                                     编辑
                                   </button>
@@ -2472,27 +2472,27 @@ export default function Home() {
                     <div className="space-y-3">
                       <div className="flex gap-2 items-end">
                         <div className="flex-1">
-                          <label className="text-xs text-[#9CA3AF]">别名</label>
+                          <label className="text-xs text-[#86868b]">别名</label>
                           <input
                             value={newAliasKey}
                             onChange={(e) => setNewAliasKey(e.target.value)}
-                            className="w-full border-0 bg-gray-50 rounded-xl px-3 py-1.5 text-sm focus:ring-2 focus:ring-[#F7E1E2] focus:outline-none transition-all duration-200"
+                            className="w-full border-0 bg-gray-50 rounded-xl px-3 py-1.5 text-sm focus:ring-2 focus:ring-[#0071e3] focus:outline-none transition-all duration-200"
                             placeholder="销售系统中的名称"
                           />
                         </div>
                         <div className="flex-1">
-                          <label className="text-xs text-[#9CA3AF]">标准名</label>
+                          <label className="text-xs text-[#86868b]">标准名</label>
                           <input
                             value={newAliasValue}
                             onChange={(e) => setNewAliasValue(e.target.value)}
-                            className="w-full border-0 bg-gray-50 rounded-xl px-3 py-1.5 text-sm focus:ring-2 focus:ring-[#F7E1E2] focus:outline-none transition-all duration-200"
+                            className="w-full border-0 bg-gray-50 rounded-xl px-3 py-1.5 text-sm focus:ring-2 focus:ring-[#0071e3] focus:outline-none transition-all duration-200"
                             placeholder="对应的标准产品名"
                           />
                         </div>
                         <button
                           onClick={handleSaveAlias}
                           disabled={rulesSaving}
-                          className="bg-[#F7E1E2] text-[#1F2937] px-4 py-1.5 rounded-xl text-sm hover:bg-[#EBCDCF] hover:scale-[1.03] active:scale-[0.97] disabled:opacity-50 font-medium transition-all duration-200"
+                          className="bg-[#0071e3] text-white px-4 py-1.5 rounded-xl text-sm hover:bg-[#005bb5] hover:scale-[1.03] active:scale-[0.97] disabled:opacity-50 font-medium transition-all duration-200"
                         >
                           添加
                         </button>
@@ -2501,14 +2501,14 @@ export default function Home() {
                         <table className="min-w-full text-sm">
                           <thead className="bg-gray-50/50 sticky top-0">
                             <tr>
-                              <th className="px-3 py-2 text-left text-[#9CA3AF] font-medium text-xs">别名</th>
-                              <th className="px-3 py-2 text-left text-[#9CA3AF] font-medium text-xs">标准名</th>
-                              <th className="px-3 py-2 text-center text-[#9CA3AF] font-medium text-xs">操作</th>
+                              <th className="px-3 py-2 text-left text-[#86868b] font-medium text-xs">别名</th>
+                              <th className="px-3 py-2 text-left text-[#86868b] font-medium text-xs">标准名</th>
+                              <th className="px-3 py-2 text-center text-[#86868b] font-medium text-xs">操作</th>
                             </tr>
                           </thead>
                           <tbody>
                             {Object.entries(aliases).map(([alias, stdName]) => (
-                              <tr key={alias} className="hover:bg-[#F7E1E2]/20 transition-colors duration-200 border-b border-gray-50">
+                              <tr key={alias} className="hover:bg-[#0071e3]/5 transition-colors duration-200 border-b border-gray-50">
                                 <td className="px-3 py-1.5 text-xs">{alias}</td>
                                 <td className="px-3 py-1.5 text-xs font-medium">{stdName}</td>
                                 <td className="px-3 py-1.5 text-center">
@@ -2530,34 +2530,34 @@ export default function Home() {
                   {/* Holiday Management */}
                   {settingsTab === "holiday" && (
                     <div className="space-y-3">
-                      <div className="bg-[#F7E1E2]/30 rounded-2xl p-3 text-xs text-[#1F2937] mb-3">
+                      <div className="bg-[#0071e3]/15 rounded-2xl p-3 text-xs text-[#1d1d1f] mb-3">
                         在这里录入节假日信息，AI 修正时会根据节日类型、节前节后影响等因素自动判断营业额系数。
                       </div>
                       <div className="grid grid-cols-5 gap-2 items-end">
                         <div>
-                          <label className="text-xs text-[#9CA3AF]">日期</label>
+                          <label className="text-xs text-[#86868b]">日期</label>
                           <input
                             type="date"
                             value={newHolidayDate}
                             onChange={(e) => setNewHolidayDate(e.target.value)}
-                            className="w-full border-0 bg-gray-50 rounded-xl px-2 py-1.5 text-sm focus:ring-2 focus:ring-[#F7E1E2] focus:outline-none transition-all duration-200"
+                            className="w-full border-0 bg-gray-50 rounded-xl px-2 py-1.5 text-sm focus:ring-2 focus:ring-[#0071e3] focus:outline-none transition-all duration-200"
                           />
                         </div>
                         <div>
-                          <label className="text-xs text-[#9CA3AF]">名称</label>
+                          <label className="text-xs text-[#86868b]">名称</label>
                           <input
                             value={newHolidayName}
                             onChange={(e) => setNewHolidayName(e.target.value)}
-                            className="w-full border-0 bg-gray-50 rounded-xl px-2 py-1.5 text-sm focus:ring-2 focus:ring-[#F7E1E2] focus:outline-none transition-all duration-200"
+                            className="w-full border-0 bg-gray-50 rounded-xl px-2 py-1.5 text-sm focus:ring-2 focus:ring-[#0071e3] focus:outline-none transition-all duration-200"
                             placeholder="如: Hari Raya Aidilfitri"
                           />
                         </div>
                         <div>
-                          <label className="text-xs text-[#9CA3AF]">类型</label>
+                          <label className="text-xs text-[#86868b]">类型</label>
                           <select
                             value={newHolidayType}
                             onChange={(e) => setNewHolidayType(e.target.value as Holiday["type"])}
-                            className="w-full border-0 bg-gray-50 rounded-xl px-2 py-1.5 text-sm focus:ring-2 focus:ring-[#F7E1E2] focus:outline-none transition-all duration-200"
+                            className="w-full border-0 bg-gray-50 rounded-xl px-2 py-1.5 text-sm focus:ring-2 focus:ring-[#0071e3] focus:outline-none transition-all duration-200"
                           >
                             <option value="public_holiday">法定公假</option>
                             <option value="festival">重要节日</option>
@@ -2567,18 +2567,18 @@ export default function Home() {
                           </select>
                         </div>
                         <div>
-                          <label className="text-xs text-[#9CA3AF]">备注</label>
+                          <label className="text-xs text-[#86868b]">备注</label>
                           <input
                             value={newHolidayNote}
                             onChange={(e) => setNewHolidayNote(e.target.value)}
-                            className="w-full border-0 bg-gray-50 rounded-xl px-2 py-1.5 text-sm focus:ring-2 focus:ring-[#F7E1E2] focus:outline-none transition-all duration-200"
+                            className="w-full border-0 bg-gray-50 rounded-xl px-2 py-1.5 text-sm focus:ring-2 focus:ring-[#0071e3] focus:outline-none transition-all duration-200"
                             placeholder="可选"
                           />
                         </div>
                         <button
                           onClick={handleAddHoliday}
                           disabled={rulesSaving || !newHolidayDate || !newHolidayName}
-                          className="bg-[#F7E1E2] text-[#1F2937] px-4 py-1.5 rounded-xl text-sm hover:bg-[#EBCDCF] hover:scale-[1.03] active:scale-[0.97] disabled:opacity-50 font-medium transition-all duration-200"
+                          className="bg-[#0071e3] text-white px-4 py-1.5 rounded-xl text-sm hover:bg-[#005bb5] hover:scale-[1.03] active:scale-[0.97] disabled:opacity-50 font-medium transition-all duration-200"
                         >
                           添加
                         </button>
@@ -2587,17 +2587,17 @@ export default function Home() {
                         <table className="min-w-full text-sm">
                           <thead className="bg-gray-50/50 sticky top-0">
                             <tr>
-                              <th className="px-3 py-2 text-left text-[#9CA3AF] font-medium text-xs">日期</th>
-                              <th className="px-3 py-2 text-left text-[#9CA3AF] font-medium text-xs">名称</th>
-                              <th className="px-3 py-2 text-center text-[#9CA3AF] font-medium text-xs">类型</th>
-                              <th className="px-3 py-2 text-left text-[#9CA3AF] font-medium text-xs">备注</th>
-                              <th className="px-3 py-2 text-center text-[#9CA3AF] font-medium text-xs">操作</th>
+                              <th className="px-3 py-2 text-left text-[#86868b] font-medium text-xs">日期</th>
+                              <th className="px-3 py-2 text-left text-[#86868b] font-medium text-xs">名称</th>
+                              <th className="px-3 py-2 text-center text-[#86868b] font-medium text-xs">类型</th>
+                              <th className="px-3 py-2 text-left text-[#86868b] font-medium text-xs">备注</th>
+                              <th className="px-3 py-2 text-center text-[#86868b] font-medium text-xs">操作</th>
                             </tr>
                           </thead>
                           <tbody>
                             {holidaysList.length === 0 ? (
                               <tr>
-                                <td colSpan={5} className="px-3 py-6 text-center text-[#9CA3AF] text-sm">
+                                <td colSpan={5} className="px-3 py-6 text-center text-[#86868b] text-sm">
                                   暂无节假日数据，请添加
                                 </td>
                               </tr>
@@ -2613,12 +2613,12 @@ export default function Home() {
                                 const typeColors: Record<string, string> = {
                                   public_holiday: "bg-red-100 text-red-700",
                                   festival: "bg-orange-100 text-orange-700",
-                                  promotion: "bg-[#F7E1E2] text-[#1F2937]",
+                                  promotion: "bg-[#0071e3] text-white",
                                   ramadan: "bg-green-100 text-green-700",
                                   other: "bg-gray-100 text-gray-700",
                                 };
                                 return (
-                                  <tr key={h.id} className="hover:bg-[#F7E1E2]/20 transition-colors duration-200 border-b border-gray-50">
+                                  <tr key={h.id} className="hover:bg-[#0071e3]/5 transition-colors duration-200 border-b border-gray-50">
                                     <td className="px-3 py-1.5 text-xs font-mono">{h.date}</td>
                                     <td className="px-3 py-1.5 text-xs font-medium">{h.name}</td>
                                     <td className="px-3 py-1.5 text-center">
@@ -2626,7 +2626,7 @@ export default function Home() {
                                         {typeLabels[h.type] || h.type}
                                       </span>
                                     </td>
-                                    <td className="px-3 py-1.5 text-xs text-[#9CA3AF]">{h.note}</td>
+                                    <td className="px-3 py-1.5 text-xs text-[#86868b]">{h.note}</td>
                                     <td className="px-3 py-1.5 text-center">
                                       <button
                                         onClick={() => h.id && handleDeleteHoliday(h.id)}
@@ -2642,7 +2642,7 @@ export default function Home() {
                           </tbody>
                         </table>
                       </div>
-                      {rulesSaving && <p className="text-sm text-[#d4727a] font-medium">保存中...</p>}
+                      {rulesSaving && <p className="text-sm text-[#0071e3] font-medium">保存中...</p>}
                     </div>
                   )}
 
@@ -2651,7 +2651,7 @@ export default function Home() {
 
         {/* Toast Notification */}
         {toast && (
-          <div className={`fixed bottom-6 right-6 px-4 py-3 rounded-2xl shadow-lg text-sm font-medium z-50 animate-fade-slide-up ${toast.type === "success" ? "bg-green-50 text-green-800" : toast.type === "error" ? "bg-red-50 text-red-800" : "bg-blue-50 text-blue-800"}`}>
+          <div className={`fixed bottom-6 right-6 px-5 py-3 rounded-xl shadow-[0_2px_12px_rgba(0,0,0,0.12)] text-sm font-medium z-50 animate-fade-slide-up ${toast.type === "success" ? "bg-[#1d1d1f] text-white" : toast.type === "error" ? "bg-red-600 text-white" : "bg-[#0071e3] text-white"}`}>
             {toast.message}
           </div>
         )}
@@ -2670,7 +2670,7 @@ function ImportResultCard({ title, result }: { title: string; result: ImportResu
       }`}
     >
       <div className="flex items-center justify-between">
-        <span className="font-medium text-[#1F2937]">{title}</span>
+        <span className="font-medium text-[#1d1d1f]">{title}</span>
         <span
           className={`text-sm ${
             result.success ? "text-green-700" : "text-red-700"
@@ -2714,9 +2714,9 @@ function ImportResultCard({ title, result }: { title: string; result: ImportResu
 
 function SummaryCard({ label, value }: { label: string; value: string }) {
   return (
-    <div className="bg-[#F7E1E2]/20 rounded-2xl p-4 hover:-translate-y-1 hover:shadow-lg transition-all duration-300">
-      <p className="text-xs text-[#9CA3AF]">{label}</p>
-      <p className="text-lg font-bold text-[#1F2937] mt-1">{value}</p>
+    <div className="bg-white rounded-xl p-4 shadow-[0_2px_8px_rgba(0,0,0,0.06)] hover:-translate-y-0.5 hover:shadow-[0_4px_16px_rgba(0,0,0,0.1)] transition-all duration-300">
+      <p className="text-xs text-[#86868b] tracking-[-0.01em]">{label}</p>
+      <p className="text-lg font-semibold text-[#1d1d1f] mt-1 tracking-[-0.02em]">{value}</p>
     </div>
   );
 }
@@ -2747,11 +2747,11 @@ function TimeSlotTable({
     <table className="min-w-full text-xs border-collapse">
       <thead>
         <tr className="bg-gray-50/50">
-          <th className="px-2 py-2 text-left sticky left-0 bg-gray-50/50 min-w-[140px] text-[#9CA3AF] font-medium text-xs border-b border-gray-100">品名</th>
-          <th className="px-2 py-2 text-right border-b border-gray-100 font-bold text-[#9CA3AF] text-xs">总数</th>
-          <th className="px-2 py-2 text-right border-b border-gray-100 font-bold text-[#9CA3AF] text-xs">金额</th>
+          <th className="px-2 py-2 text-left sticky left-0 bg-gray-50/50 min-w-[140px] text-[#86868b] font-medium text-xs border-b border-gray-100">品名</th>
+          <th className="px-2 py-2 text-right border-b border-gray-100 font-bold text-[#86868b] text-xs">总数</th>
+          <th className="px-2 py-2 text-right border-b border-gray-100 font-bold text-[#86868b] text-xs">金额</th>
           {ALL_SLOTS.map((slot) => (
-            <th key={slot} className="px-2 py-2 text-center border-b border-gray-100 min-w-[50px] text-[#9CA3AF] font-medium text-xs">
+            <th key={slot} className="px-2 py-2 text-center border-b border-gray-100 min-w-[50px] text-[#86868b] font-medium text-xs">
               {slot.replace(":00", "点")}
             </th>
           ))}
@@ -2767,14 +2767,14 @@ function TimeSlotTable({
           const totalQty = productSlots.reduce((sum, s) => sum + s.quantity, 0);
           const totalAmount = productSlots.reduce((sum, s) => sum + s.amount, 0);
           return (
-            <tr key={name} className="hover:bg-[#F7E1E2]/20 transition-colors duration-200 border-b border-gray-50">
+            <tr key={name} className="hover:bg-[#0071e3]/5 transition-colors duration-200 border-b border-gray-50">
               <td className="px-2 py-1.5 font-medium sticky left-0 bg-white text-[11px] whitespace-nowrap">
                 {name}
               </td>
               <td className="px-2 py-1.5 text-right font-semibold">
                 {totalQty}
               </td>
-              <td className="px-2 py-1.5 text-right text-[#9CA3AF]">
+              <td className="px-2 py-1.5 text-right text-[#86868b]">
                 {totalAmount.toLocaleString()}
               </td>
               {ALL_SLOTS.map((slot) => {
@@ -2785,7 +2785,7 @@ function TimeSlotTable({
                     key={slot}
                     className={`px-2 py-1.5 text-center ${
                       isFixedSlot
-                        ? "bg-[#F7E1E2]/40 text-[#1F2937] font-semibold"
+                        ? "bg-[#0071e3]/20 text-[#1d1d1f] font-semibold"
                         : "text-gray-300"
                     }`}
                   >
@@ -2798,8 +2798,8 @@ function TimeSlotTable({
         })}
       </tbody>
       <tfoot>
-        <tr className="bg-[#F7E1E2]/20 font-semibold border-t-2 border-gray-100">
-          <td className="px-2 py-2 sticky left-0 bg-[#F7E1E2]/20">合计</td>
+        <tr className="bg-[#0071e3]/10 font-semibold border-t-2 border-gray-100">
+          <td className="px-2 py-2 sticky left-0 bg-[#0071e3]/10">合计</td>
           <td className="px-2 py-2 text-right">
             {suggestions
               .reduce((s, item) => s + item.quantity, 0)
