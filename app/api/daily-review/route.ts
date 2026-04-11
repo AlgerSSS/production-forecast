@@ -66,7 +66,7 @@ export async function POST(req: NextRequest) {
     // 查询TOP产品近14天销售趋势（按日型分组计算均值）
     const trendStart = dayjs(feedData.date).subtract(13, "day").format("YYYY-MM-DD");
     const topProducts = await query<{ standard_name: string }>(
-      `SELECT DISTINCT standard_name FROM daily_sales_record
+      `SELECT standard_name FROM daily_sales_record
        WHERE date >= ? AND date <= ?
        GROUP BY standard_name
        ORDER BY SUM(quantity) DESC LIMIT 10`,
