@@ -3,9 +3,9 @@
 import { useState, useCallback } from "react";
 import { useForecastContext } from "@/components/providers/forecast-provider";
 import {
-  saveOutOfStockRecords, deleteOutOfStockByDate, adoptDailyReview, upsertDailyRevenue,
+  saveOutOfStockRecords, deleteOutOfStockByDate, adoptDailyReview, upsertDailyRevenue, addContextEvent,
 } from "@/lib/actions";
-import { parseStockoutLine, calculateLossSlots, calculateStockoutLoss } from "@/lib/engine/forecast-engine";
+import { parseStockoutLine, calculateLossSlots, calculateStockoutLoss, calculateStockoutLossWithTraffic } from "@/lib/engine/forecast-engine";
 import type { OutOfStockRecord, DailyReviewResult } from "@/lib/types";
 import dayjs from "dayjs";
 
@@ -17,6 +17,10 @@ export function useReview() {
   const [parsedStockouts, setParsedStockouts] = useState<OutOfStockRecord[]>([]);
   const [reviewResult, setReviewResult] = useState<DailyReviewResult | null>(null);
   const [reviewLoading, setReviewLoading] = useState(false);
+  const [transactionCount, setTransactionCount] = useState("");
+  const [avgTransactionValue, setAvgTransactionValue] = useState("");
+  const [weatherCondition, setWeatherCondition] = useState("");
+  const [specialNotes, setSpecialNotes] = useState("");
 
   const handleStockoutTextChange = useCallback((text: string) => {
     setStockoutText(text);
@@ -36,30 +40,63 @@ export function useReview() {
   const submitReview = useCallback(async (showToast: (msg: string, type: "success" | "error" | "info") => void) => {
     setReviewLoading(true);
     try {
+      const txCount = Number(transactionCount) || 0;
+      const actualRevenue = Number(reviewActualRevenue) || 0;
+      // Auto-calculate avgTransactionValue if not manually set
+      let avgTxValue = Number(avgTransactionValue) || 0;
+      if (txCount > 0 && avgTxValue === 0 && actualRevenue > 0) {
+        avgTxValue = Math.round((actualRevenue / txCount) * 100) / 100;
+        setAvgTransactionValue(String(avgTxValue));
+      }
+
       if (parsedStockouts.length > 0) {
         const enriched = parsedStockouts.map((s) => {
           const product = state.products.find((p) => p.name === s.productName);
           const price = product?.price || 0;
           const history = state.timeslotSalesRecords || [];
-          const { lossQty, lossAmount } = calculateStockoutLoss(s, history, price);
+          const { lossQty, lossAmount } = txCount > 0
+            ? calculateStockoutLossWithTraffic(s, history, price, txCount)
+            : calculateStockoutLoss(s, history, price);
           return { ...s, date: reviewDate, estimatedLossQty: lossQty, estimatedLossAmount: lossAmount };
         });
         await deleteOutOfStockByDate(reviewDate);
         await saveOutOfStockRecords(enriched);
       }
-      const actualRevenue = Number(reviewActualRevenue) || 0;
+
       if (actualRevenue > 0) {
-        await upsertDailyRevenue(reviewDate, actualRevenue);
+        await upsertDailyRevenue(reviewDate, actualRevenue, txCount || undefined, avgTxValue || undefined);
       }
+
+      // Save weather as context_event
+      if (weatherCondition) {
+        await addContextEvent({
+          date: reviewDate,
+          eventType: "weather",
+          eventTag: weatherCondition,
+          description: `天气：${weatherCondition}`,
+          impactProducts: "",
+          createdBy: "review",
+        });
+      }
+
       const res = await fetch("/api/daily-review", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ feedData: { date: reviewDate, actualRevenue, stockoutRecords: parsedStockouts } }),
+        body: JSON.stringify({
+          feedData: {
+            date: reviewDate,
+            actualRevenue,
+            transactionCount: txCount || undefined,
+            avgTransactionValue: avgTxValue || undefined,
+            weatherCondition: weatherCondition || undefined,
+            specialNotes: specialNotes || undefined,
+            stockoutRecords: parsedStockouts,
+          },
+        }),
       });
       const data = await res.json();
       if (res.ok) {
         setReviewResult(data);
-        // Sync to ForecastContext so overview page reflects immediately
         const yesterday = dayjs().subtract(1, "day").format("YYYY-MM-DD");
         if (reviewDate === yesterday) {
           if (actualRevenue > 0) dispatch({ type: "SET_YESTERDAY_SALES", payload: actualRevenue });
@@ -70,7 +107,7 @@ export function useReview() {
       else showToast(data.error || "复盘失败", "error");
     } catch (err) { showToast(String(err), "error"); }
     finally { setReviewLoading(false); }
-  }, [parsedStockouts, state.products, state.timeslotSalesRecords, reviewDate, reviewActualRevenue]);
+  }, [parsedStockouts, state.products, state.timeslotSalesRecords, reviewDate, reviewActualRevenue, transactionCount, avgTransactionValue, weatherCondition, specialNotes, dispatch]);
 
   const adoptReview = useCallback(async (showToast: (msg: string, type: "success" | "error" | "info") => void) => {
     if (!reviewResult) return;
@@ -85,5 +122,9 @@ export function useReview() {
     reviewDate, setReviewDate, reviewActualRevenue, setReviewActualRevenue,
     stockoutText, handleStockoutTextChange, parsedStockouts,
     reviewResult, reviewLoading, submitReview, adoptReview,
+    transactionCount, setTransactionCount,
+    avgTransactionValue, setAvgTransactionValue,
+    weatherCondition, setWeatherCondition,
+    specialNotes, setSpecialNotes,
   };
 }

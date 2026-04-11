@@ -285,6 +285,10 @@ export interface DailyFeedData {
     topProducts: string[];
   }>;
   contextEvents: ContextEvent[];
+  transactionCount?: number;
+  avgTransactionValue?: number;
+  weatherCondition?: string;
+  specialNotes?: string;
   weather?: {
     condition: string;
     temperature: number;
@@ -306,6 +310,7 @@ export interface DailyReviewResult {
       suggestion: string;
     }>;
     timeslotInsights: string[];
+    transactionAnalysis?: string;
   };
   tomorrowSuggestions: {
     overallCoefficientAdjust: number;

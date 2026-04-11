@@ -63,6 +63,29 @@ export async function POST(req: NextRequest) {
       ? txRows.map((r) => `${r.date}: 营业额=${r.revenue}, 客单数=${r.transaction_count ?? "N/A"}, 客单价=${r.avg_transaction_value ?? "N/A"}`).join("\n")
       : "暂无客单数据";
 
+    // 构建今日 vs 历史对比
+    const todayTxCount = feedData.transactionCount || null;
+    const todayAvgTxValue = feedData.avgTransactionValue || null;
+    const todayRevenue = feedData.actualRevenue || 0;
+    const historyWithTx = txRows.filter((r) => r.transaction_count != null && r.date !== feedData.date);
+    let transactionComparison = "";
+    if (todayTxCount && historyWithTx.length > 0) {
+      const avgHistTxCount = historyWithTx.reduce((s, r) => s + (r.transaction_count || 0), 0) / historyWithTx.length;
+      const avgHistAvgTxValue = historyWithTx.reduce((s, r) => s + (r.avg_transaction_value || 0), 0) / historyWithTx.length;
+      const avgHistRevenue = historyWithTx.reduce((s, r) => s + r.revenue, 0) / historyWithTx.length;
+      const txCountChange = avgHistTxCount > 0 ? ((todayTxCount - avgHistTxCount) / avgHistTxCount * 100).toFixed(1) : "N/A";
+      const avgTxValueChange = avgHistAvgTxValue > 0 && todayAvgTxValue ? ((todayAvgTxValue - avgHistAvgTxValue) / avgHistAvgTxValue * 100).toFixed(1) : "N/A";
+      const revenueChange = avgHistRevenue > 0 ? ((todayRevenue - avgHistRevenue) / avgHistRevenue * 100).toFixed(1) : "N/A";
+      transactionComparison = `【今日客单指标 vs 历史对比】
+- 今日客单数: ${todayTxCount}，历史${historyWithTx.length}天均值: ${avgHistTxCount.toFixed(0)}，变化: ${txCountChange}%
+- 今日客单价: ${todayAvgTxValue ?? "N/A"}，历史均值: ${avgHistAvgTxValue.toFixed(2)}，变化: ${avgTxValueChange}%
+- 今日营业额: ${todayRevenue}，历史均值: ${avgHistRevenue.toFixed(0)}，变化: ${revenueChange}%
+- 营业额拆解: ${todayRevenue} = ${todayTxCount}笔 × ${todayAvgTxValue ?? (todayTxCount > 0 ? (todayRevenue / todayTxCount).toFixed(2) : "N/A")}元/笔`;
+    }
+
+    const weatherSection = feedData.weatherCondition ? `\n【天气状况】\n${feedData.weatherCondition}` : "";
+    const notesSection = feedData.specialNotes ? `\n【特别备注】\n${feedData.specialNotes}` : "";
+
     // 查询TOP产品近14天销售趋势（按日型分组计算均值）
     const trendStart = dayjs(feedData.date).subtract(13, "day").format("YYYY-MM-DD");
     const topProducts = await query<{ standard_name: string }>(
@@ -153,6 +176,7 @@ ${todayHolidayStr}
 - 日期类型：${dayTypeLabels[tomorrowDayType] || tomorrowDayType}
 - 已录入事件：${tomorrowEventsStr}
 - 节日信息：${tomorrowHolidayStr}
+${transactionComparison ? `\n${transactionComparison}` : ""}${weatherSection}${notesSection}
 
 重要提示：分析时只能引用上面提供的节日和事件数据，不要自行编造或假设任何节日、活动信息。
 
@@ -163,7 +187,8 @@ ${todayHolidayStr}
     "highlights": ["亮点1", "亮点2"],
     "painPoints": ["痛点1", "痛点2"],
     "stockoutAnalysis": [{"product": "xxx", "lossQty": 10, "lossAmount": 50, "suggestion": "明日增产20%"}],
-    "timeslotInsights": ["时段洞察1"]
+    "timeslotInsights": ["时段洞察1"],
+    "transactionAnalysis": "客单数/客单价对比历史的分析（如有客单数据则必填，无则留空字符串）"
   },
   "tomorrowSuggestions": {
     "overallCoefficientAdjust": 1.05,
@@ -188,6 +213,9 @@ ${todayHolidayStr}
           tomorrowHoliday: tomorrowHolidayStr,
           transactionData,
           productTrendData,
+          transactionComparison: transactionComparison || "无客单对比数据",
+          weatherCondition: feedData.weatherCondition || "未填写",
+          specialNotes: feedData.specialNotes || "无",
         };
         const built = await buildPrompt("daily_review", vars);
         systemInstruction = built.systemInstruction;

@@ -191,6 +191,60 @@ export function calculateStockoutLoss(
   };
 }
 
+/**
+ * 基于真实客流的断货损失计算
+ * 用今日真实客单数 ÷ 营业时段数 = 每时段平均客流
+ * 用历史各时段销量占比分配客流到各损失时段
+ * 损失数量 = 各损失时段的预期销量（基于客流比例缩放）
+ * 设 2x 上限防止异常值
+ */
+export function calculateStockoutLossWithTraffic(
+  record: OutOfStockRecord,
+  timeslotHistory: TimeslotSalesRecord[],
+  productPrice: number,
+  todayTransactionCount: number
+): { lossQty: number; lossAmount: number } {
+  // Build history map for this product + dayType
+  const historyMap = new Map<string, number>();
+  let totalHistoryQty = 0;
+  for (const r of timeslotHistory) {
+    if (r.productName === record.productName && r.dayType === record.dayType) {
+      historyMap.set(r.timeSlot, r.avgQuantity);
+      totalHistoryQty += r.avgQuantity;
+    }
+  }
+
+  if (totalHistoryQty === 0 || BUSINESS_SLOTS.length === 0) {
+    // Fallback to original logic
+    return calculateStockoutLoss(record, timeslotHistory, productPrice);
+  }
+
+  // Average traffic per slot based on today's real transaction count
+  const avgTrafficPerSlot = todayTransactionCount / BUSINESS_SLOTS.length;
+
+  // Calculate loss for each loss slot using historical proportion scaled by real traffic
+  let lossQty = 0;
+  for (const slot of record.lossSlots) {
+    const histAvg = historyMap.get(slot) || 0;
+    if (histAvg === 0) continue;
+    // Proportion of this slot in total daily sales
+    const slotProportion = histAvg / totalHistoryQty;
+    // Expected sales = real traffic per slot × proportion scaling
+    const expectedSales = avgTrafficPerSlot * slotProportion * BUSINESS_SLOTS.length;
+    lossQty += expectedSales;
+  }
+
+  // Cap at 2x the historical average loss to prevent outliers
+  const historicalLoss = calculateStockoutLoss(record, timeslotHistory, productPrice);
+  const maxLossQty = historicalLoss.lossQty * 2;
+  lossQty = Math.min(Math.round(lossQty), maxLossQty > 0 ? maxLossQty : Math.round(lossQty));
+
+  return {
+    lossQty,
+    lossAmount: Math.round(lossQty * productPrice),
+  };
+}
+
 // ========== Sales Baseline Calculation ==========
 export function calculateSalesBaselines(
   salesRecords: DailySalesRecord[],
