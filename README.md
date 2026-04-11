@@ -1,72 +1,72 @@
 # Production Forecast — 烘焙店排产预估系统
 
-基于 Next.js + PostgreSQL + AI 的烘焙店每日排产预估系统，适用于马来西亚吉隆坡地区的烘焙连锁门店。系统通过历史销售数据、业务规则和 AI 智能修正，自动生成月度营业额目标 → 日营业额分配 → 单品出货建议 → 分时段排产计划的完整预测链路。
+基于 Next.js + PostgreSQL + AI 的烘焙店每日排产预估系统，适用于马来西亚吉隆坡地区的烘焙连锁门店。系统通过历史销售数据、业务规则和 AI 智能修正，自动生成月度营业额目标 → 日营业额分配 → 单品出货建议 → 分时段排产计划的完整预测链路，并提供每日复盘、趋势分析、日历看板等运营辅助功能。
 
 ## 技术栈
 
 | 层级 | 技术 |
 |------|------|
-| 前端 | Next.js 16 + React 19 + Tailwind CSS 4 |
+| 前端 | Next.js 16 + React 19 + Tailwind CSS 4 + Recharts |
 | 后端 | Next.js Server Actions + API Routes |
 | 数据库 | PostgreSQL (Supabase) |
-| AI 引擎 | Google Gemini 2.5 Flash |
+| AI 引擎 | Google Gemini 2.5 Flash（自动降级 Lite） |
+| 趋势预测 | Prophet (Python 微服务) |
 | 数据解析 | ExcelJS（Excel 导入导出） |
 | 语言 | TypeScript 5 |
 
 ## 系统架构
 
 ```
-┌─────────────────────────────────────────────────────────────┐
-│                        前端 (app/page.tsx)                    │
-│  数据导入 → 月目标 → 日目标 → 单品建议 → 分时段 → 导出       │
-└────────────────────────┬────────────────────────────────────┘
-                         │
-         ┌───────────────┼───────────────┐
-         ▼               ▼               ▼
-  Server Actions    API Routes     AI Correction
-  (lib/actions.ts)  (app/api/)    (Gemini 2.5 Flash)
-         │               │               │
-         ▼               ▼               ▼
-  ┌──────────────────────────────────────────────┐
-  │       PostgreSQL (Supabase)                  │
-  │  product │ product_strategy │ holiday        │
-  │  daily_sales_record │ product_alias          │
-  │  product_sales_baseline │ business_rule      │
-  │  fixed_shipment_schedule │ timeslot_sales    │
-  └──────────────────────────────────────────────┘
+┌──────────────────────────────────────────────────────────────────────┐
+│                     前端 (Apple Design System)                        │
+│  总览 │ 排产 │ 复盘 │ 时段 │ 趋势 │ 日历 │ 赋能 │ 设置              │
+└───────────────────────────┬──────────────────────────────────────────┘
+                            │
+         ┌──────────────────┼──────────────────┐
+         ▼                  ▼                  ▼
+  Server Actions       API Routes        Prophet Service
+  (lib/actions.ts)     (app/api/)        (Python 微服务)
+         │                  │                  │
+         │          ┌───────┴───────┐          │
+         │          ▼               ▼          │
+         │    Gemini 2.5 Flash  Prompt Engine  │
+         │    (自动降级 Lite)   (DB 模板驱动)   │
+         │          │               │          │
+         ▼          ▼               ▼          ▼
+  ┌────────────────────────────────────────────────────┐
+  │              PostgreSQL (Supabase)                  │
+  │  product │ product_strategy │ holiday │ daily_revenue│
+  │  daily_sales_record │ product_alias │ context_event │
+  │  product_sales_baseline │ business_rule             │
+  │  fixed_shipment_schedule │ timeslot_sales_record    │
+  │  out_of_stock_record │ prompt_segment/template      │
+  │  daily_review_result │ empowerment_event            │
+  └────────────────────────────────────────────────────┘
 ```
 
 ## 核心功能模块
 
-### 1. 数据导入（数据导入 Tab）
+系统包含 8 个主要页面，覆盖从预测到复盘的完整运营闭环。
 
-从 `data/` 目录下的 Excel 文件批量导入：
+### 1. 总览看板（Overview）
 
-| 文件 | 用途 |
-|------|------|
-| `产品价格信息与倍数.xlsx` | 产品基本信息：品类、品名、单价、包装倍数、出货单位 |
-| `产品销售策略.xlsx` | 产品定位（TOP/潜在TOP/其他）、冷热属性、销售占比、目标TC |
-| `单品销售数量1.1-4.2.xlsx` | 历史每日单品销量数据（1月1日 ~ 4月2日） |
-| `kl陈列满柜单品数量.xlsx` | 各产品陈列满柜数量 |
-| `时段销售/` | 分时段单品销售数据（按日期类型分类） |
+运营数据一览：
+- 今日/昨日营业额目标与实际对比
+- 昨日复盘摘要（亮点、痛点、建议）
+- 快速导航至各功能模块
 
-导入时自动完成：
-- 产品名称别名映射（通过 `config/product-aliases.json`，100+ 条映射规则）
-- 按日期类型（周一至周四 / 周五 / 周末）计算销售基线
-- 非烘焙类产品自动过滤（咖啡、饮品、周边等）
+### 2. 排产预测（Production）
 
-### 2. 月度营业额目标（月目标 Tab）
+完整的排产预测链路：
 
-基于业务规则计算全年12个月的营业额目标：
-
+**月度营业额目标**
 ```
 月营业额 = 首月基础营业额 × 月度系数 × (1 + 运营提升 + 市场提升)
 ```
-
 - 月度系数可在 UI 中手动调整，编辑后自动保存到数据库
-- 支持 AI 修正：调用 Gemini 模型根据节假日分析自动建议每日系数
+- 支持 AI 修正：调用 Gemini 模型根据节假日分析自动建议系数
 
-### 3. 日营业额分配（日目标 Tab）
+**日营业额分配**
 
 将月度目标按权重分配到每一天：
 
@@ -76,47 +76,62 @@
 | 周五 | 1.2 |
 | 周末 | 1.35 |
 
-**AI 智能修正**：系统将节假日信息传递给 Gemini AI，由 AI 综合分析以下因素后自主判断每日系数：
+AI 智能修正综合分析：节假日影响、节前/节后效应、长周末/桥假、发薪日效应、斋月消费模式变化、相邻月份跨月影响等。
 
-- 节假日当天影响（根据节日类型和重要程度）
-- 节前效应（重大节日前1-3天消费提前上升）
-- 节后效应（长假结束后的消费回落）
-- 长周末 / 桥假效应
-- 发薪日效应（月初月中消费略高）
-- 斋月（Ramadan）期间的消费模式变化
-- 相邻月份节假日的跨月影响
-
-### 4. 单品出货建议（单品建议 Tab）
-
-根据销售基线和产品策略生成每日单品出货量：
-
+**单品出货建议**
 - 基线数据按日期类型（周一至四 / 周五 / 周末）分别计算平均销量
-- 优先使用分时段历史数据汇总，回退到 `product_sales_baseline` 表
-- TOP 产品加权 +10~15%（按日期类型差异化），潜在TOP 加权 +5~8%
-- 按包装倍数取整（整批产品向上取整，按个产品四舍五入）
-- 按目标营业额等比缩放，确保总出货金额匹配日目标
-- 支持手动调整单品数量
-- AI 修正：Gemini 在保持总金额守恒的前提下优化产品组合
+- TOP 产品加权 +10~15%，潜在TOP 加权 +5~8%
+- 按包装倍数取整，按目标营业额等比缩放
+- 支持手动调整 + AI 修正（保持总金额守恒）
 
-### 5. 分时段排产（分时段 Tab）
+### 3. 每日复盘（Review）
+
+AI 驱动的每日经营复盘：
+- 自动拉取昨日实际营业额与客单数据
+- Gemini 分析亮点、痛点、改进建议
+- 复盘结果持久化存储，支持历史回顾
+- 复盘数据同步至总览看板
+
+### 4. 分时段排产（Timeslots）
 
 基于历史分时段销售数据，将单品日总量智能分配到各时段（10:00 ~ 19:00）：
-
 - 使用历史时段销售比例进行数据驱动分配
 - 考虑产品冷热属性和消费高峰时段
 - 支持固定出货时间表配置
-- 余量优先分配给较早的时段
 - 展示预计销售和预计剩余（累计计算）
 - AI 建议：Gemini 根据历史销售模式生成最优时段分配方案
 - 导出为与页面一致的二维表格（含颜色标记）
 
-### 6. 数据导出（导出 Tab）
+### 5. 趋势分析（Trends）
 
-将排产结果导出为 Excel 文件，包含多个工作表：
-- 月度营业额目标
-- 日营业额目标
-- 单品出货建议（含手动调整记录）
-- 分时段排产表（带颜色标记的二维表格）
+多产品销售趋势可视化：
+- 双轴图表（销量 vs 营业额）
+- Prophet 时间序列预测（Python 微服务）
+- 支持多产品对比和时间范围筛选
+
+### 6. 日历看板（Calendar）
+
+月度日历视图：
+- 每日目标营业额与实际营业额对比
+- 节假日标注
+- 缺货事件记录与损失金额计算
+
+### 7. 赋能分析（Empowerment）
+
+运营/市场活动效果追踪：
+- 记录赋能事件（营销活动、运营优化等）
+- AI 分析活动对营业额的影响
+- 量化赋能效果
+
+### 8. 系统设置（Settings）
+
+通过 UI 配置以下内容：
+- 业务规则（基础营业额、提升率、日期权重等）
+- 产品别名映射
+- 出货时间表
+- 节假日管理（录入节日信息，AI 自动判断系数影响）
+- 数据导入（从 Excel 批量导入产品、销售、策略数据）
+- Prompt 模板管理
 
 ## 数据库表结构
 
@@ -131,6 +146,13 @@
 | `holiday` | 节假日/特殊日期信息（AI 动态判断系数） |
 | `fixed_shipment_schedule` | 固定出货时间表 |
 | `timeslot_sales_record` | 分时段单品销售记录（按日期类型） |
+| `daily_revenue` | 每日实际营业额记录 |
+| `out_of_stock_record` | 缺货事件记录与损失金额 |
+| `context_event` | 运营/市场上下文事件 |
+| `prompt_segment` | AI Prompt 可复用片段 |
+| `prompt_template` | AI Prompt 模板（引用 segment 占位符） |
+| `daily_review_result` | 每日复盘结果存储 |
+| `empowerment_event` | 赋能活动事件追踪 |
 
 ### 节假日管理
 
@@ -143,6 +165,7 @@
 - Node.js 18+
 - PostgreSQL 8.0+（推荐使用 Supabase）
 - Google Gemini API Key
+- Python 3.10+（可选，Prophet 趋势预测服务）
 
 ### 安装与配置
 
@@ -206,31 +229,78 @@ npm start
 ```
 production-forecast/
 ├── app/
-│   ├── page.tsx                    # 主页面（6个 Tab UI）
+│   ├── page.tsx                    # 主入口
 │   ├── layout.tsx                  # 全局布局
 │   ├── globals.css                 # 全局样式（Tailwind）
 │   └── api/
-│       ├── ai-correction/route.ts          # AI 日系数修正接口
-│       ├── ai-product-correction/route.ts  # AI 单品出货修正接口
-│       └── ai-timeslot/route.ts            # AI 分时段出货建议接口
+│       ├── ai-correction/          # AI 日系数修正
+│       ├── ai-product-correction/  # AI 单品出货修正
+│       ├── ai-timeslot/            # AI 分时段建议
+│       ├── daily-review/           # 每日复盘 AI 分析
+│       ├── empowerment-review/     # 赋能效果 AI 分析
+│       └── prophet-trend/          # Prophet 趋势预测代理
+├── components/
+│   ├── app-shell.tsx               # 应用外壳（导航 + 页面路由）
+│   ├── pages/                      # 8 个主页面组件
+│   │   ├── overview-page.tsx       # 总览看板
+│   │   ├── production-page.tsx     # 排产预测
+│   │   ├── review-page.tsx         # 每日复盘
+│   │   ├── timeslots-page.tsx      # 分时段排产
+│   │   ├── trends-page.tsx         # 趋势分析
+│   │   ├── calendar-page.tsx       # 日历看板
+│   │   ├── empowerment-page.tsx    # 赋能分析
+│   │   └── settings-page.tsx       # 系统设置
+│   ├── domain/                     # 领域组件
+│   │   ├── timeslot-table.tsx      # 时段分配表格
+│   │   └── trend-chart.tsx         # 趋势图表
+│   ├── nav/
+│   │   └── top-nav.tsx             # 顶部导航（Apple 风格毛玻璃）
+│   ├── providers/
+│   │   ├── forecast-provider.tsx   # 全局预测状态 Context
+│   │   └── toast-provider.tsx      # Toast 通知
+│   └── shared/                     # 通用 UI 组件
+├── hooks/                          # 自定义 React Hooks
+│   ├── use-ai.ts                   # AI 调用逻辑
+│   ├── use-calendar.ts             # 日历数据
+│   ├── use-empowerment.ts          # 赋能分析
+│   ├── use-export.ts               # Excel 导出
+│   ├── use-forecast.ts             # 预测状态
+│   ├── use-review.ts               # 每日复盘
+│   ├── use-settings.ts             # 设置管理
+│   ├── use-toast.ts                # Toast 通知
+│   └── use-trends.ts               # 趋势分析
 ├── lib/
 │   ├── actions.ts                  # Server Actions（数据库 CRUD）
-│   ├── db.ts                       # PostgreSQL 连接（postgres 驱动）
+│   ├── db.ts                       # PostgreSQL 连接
+│   ├── gemini-retry.ts             # Gemini API 重试与降级
 │   ├── engine/
-│   │   └── forecast-engine.ts      # 核心预测引擎
+│   │   ├── forecast-engine.ts      # 核心预测引擎
+│   │   └── prompt-engine.ts        # Prompt 模板引擎（DB 驱动）
 │   ├── parsers/
 │   │   └── excel-parser.ts         # Excel 文件解析器
 │   └── types/
 │       └── index.ts                # TypeScript 类型定义
+├── constants/
+│   └── index.ts                    # 常量定义（时段、颜色、页面 ID）
 ├── config/
 │   ├── business-rules.json         # 业务规则配置
 │   ├── planning-rules.json         # 排产规则配置
 │   └── product-aliases.json        # 产品名称别名映射（100+条）
+├── scripts/                        # 工具脚本
+│   ├── seed.ts                     # 数据库种子数据
+│   ├── import-daily-revenue.ts     # 导入每日营业额
+│   ├── import-sales-data.ts        # 导入销售数据
+│   ├── insert-stockout.ts          # 插入缺货记录
+│   └── migrate-prompts.ts          # 迁移 Prompt 模板到 DB
+├── prophet-service/                # Prophet 趋势预测微服务
+│   ├── main.py                     # FastAPI 入口
+│   ├── models/
+│   │   └── trend_predictor.py      # Prophet 预测模型
+│   ├── requirements.txt
+│   └── Dockerfile
 ├── data/                           # Excel 源数据文件
-│   ├── 时段销售/                   # 分时段销售数据
-│   └── 真实排产案例/               # 真实排产参考案例
 ├── sql/
-│   ├── init.sql                    # 数据库初始化脚本（PostgreSQL）
+│   ├── init.sql                    # 数据库初始化脚本
 │   ├── seed-holidays-2026.sql      # 2026 年节假日数据
 │   └── migrate-dev-plans.sql       # 开发迁移脚本
 └── package.json
@@ -238,7 +308,7 @@ production-forecast/
 
 ## 业务规则配置
 
-通过 UI 的「规则管理」面板可配置以下内容：
+通过设置页面可配置以下内容：
 
 | 规则 | 说明 |
 |------|------|
@@ -250,3 +320,21 @@ production-forecast/
 | 产品别名 | 原始数据品名 → 标准品名的映射 |
 | 出货时间表 | 各产品的固定出货时段 |
 | 节假日管理 | 录入节日信息，AI 自动判断系数影响 |
+
+## AI Prompt 管理
+
+系统采用数据库驱动的 Prompt 模板架构：
+
+- `prompt_segment` 表存储可复用的 Prompt 片段（系统角色、数据格式、分析维度等）
+- `prompt_template` 表通过占位符引用 segment，组装完整 Prompt
+- `prompt-engine.ts` 在运行时从 DB 加载模板并渲染
+- 支持通过设置页面在线编辑 Prompt，无需改代码
+
+## 设计风格
+
+采用 Apple Design System 设计语言：
+- 毛玻璃导航栏（backdrop-blur）
+- SF Pro 字体风格
+- Apple Blue (#0071e3) 主色调
+- 纯黑 + 浅灰配色方案
+- 响应式布局（移动端 → 桌面端）
