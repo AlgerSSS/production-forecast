@@ -10,7 +10,7 @@ import type { OutOfStockRecord, DailyReviewResult } from "@/lib/types";
 import dayjs from "dayjs";
 
 export function useReview() {
-  const { state } = useForecastContext();
+  const { state, dispatch } = useForecastContext();
   const [reviewDate, setReviewDate] = useState(dayjs().format("YYYY-MM-DD"));
   const [reviewActualRevenue, setReviewActualRevenue] = useState("");
   const [stockoutText, setStockoutText] = useState("");
@@ -57,7 +57,16 @@ export function useReview() {
         body: JSON.stringify({ feedData: { date: reviewDate, actualRevenue, stockoutRecords: parsedStockouts } }),
       });
       const data = await res.json();
-      if (res.ok) { setReviewResult(data); showToast("AI 复盘完成", "success"); }
+      if (res.ok) {
+        setReviewResult(data);
+        // Sync to ForecastContext so overview page reflects immediately
+        const yesterday = dayjs().subtract(1, "day").format("YYYY-MM-DD");
+        if (reviewDate === yesterday) {
+          if (actualRevenue > 0) dispatch({ type: "SET_YESTERDAY_SALES", payload: actualRevenue });
+          dispatch({ type: "SET_DASHBOARD_REVIEW", payload: data });
+        }
+        showToast("AI 复盘完成", "success");
+      }
       else showToast(data.error || "复盘失败", "error");
     } catch (err) { showToast(String(err), "error"); }
     finally { setReviewLoading(false); }
@@ -66,9 +75,11 @@ export function useReview() {
   const adoptReview = useCallback(async (showToast: (msg: string, type: "success" | "error" | "info") => void) => {
     if (!reviewResult) return;
     await adoptDailyReview(reviewDate);
-    setReviewResult({ ...reviewResult, adopted: true });
+    const updated = { ...reviewResult, adopted: true };
+    setReviewResult(updated);
+    dispatch({ type: "SET_DASHBOARD_REVIEW", payload: updated });
     showToast("已采纳复盘建议", "success");
-  }, [reviewResult, reviewDate]);
+  }, [reviewResult, reviewDate, dispatch]);
 
   return {
     reviewDate, setReviewDate, reviewActualRevenue, setReviewActualRevenue,
