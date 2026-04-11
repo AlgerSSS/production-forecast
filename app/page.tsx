@@ -2120,11 +2120,6 @@ export default function Home() {
                 try {
                   const data = await getProductSalesTrend(trendSelectedProducts, trendStartDate, trendEndDate);
                   setTrendData(data);
-                  // Debug: log data per product
-                  const byProduct: Record<string, number> = {};
-                  for (const r of data) { byProduct[r.product_name] = (byProduct[r.product_name] || 0) + 1; }
-                  console.log("[TrendDebug] rows:", data.length, "byProduct:", byProduct);
-                  console.log("[TrendDebug] sample:", data.slice(0, 5));
                   if (data.length === 0) showToast("该时间段无销售数据", "info");
                 } catch { showToast("查询失败", "error"); }
                 finally { setTrendLoading(false); }

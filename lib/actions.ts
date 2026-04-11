@@ -1162,11 +1162,11 @@ export async function getDailyRevenues(startDate: string, endDate: string): Prom
 
 export async function getProductSalesTrend(productNames: string[], startDate: string, endDate: string): Promise<{ product_name: string; date: string; day_of_week: number; total_qty: number }[]> {
   if (productNames.length === 0) return [];
-  const placeholders = productNames.map((_, i) => `$${i + 3}`).join(", ");
+  const placeholders = productNames.map(() => "?").join(", ");
   return query<{ product_name: string; date: string; day_of_week: number; total_qty: number }>(
     `SELECT standard_name AS product_name, date, day_of_week, SUM(quantity) AS total_qty
      FROM daily_sales_record
-     WHERE date >= $1 AND date <= $2 AND standard_name IN (${placeholders})
+     WHERE date >= ? AND date <= ? AND standard_name IN (${placeholders})
      GROUP BY standard_name, date, day_of_week
      ORDER BY date, standard_name`,
     [startDate, endDate, ...productNames]
